@@ -59,17 +59,22 @@ class MultiHeadAttention(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
 
-        self.w_qs = nn.Linear(d_model, n_head * d_k)
-        self.w_ks = nn.Linear(d_model, n_head * d_k)
-        self.w_vs = nn.Linear(d_model, n_head * d_v)
-        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_v)))
+        if isinstance(d_model, tuple):
+            d_model_alpha, d_model_beta = d_model
+        else:
+            d_model_alpha = d_model_beta = d_model
+
+        self.w_qs = nn.Linear(d_model_alpha, n_head * d_k)
+        self.w_ks = nn.Linear(d_model_beta, n_head * d_k)
+        self.w_vs = nn.Linear(d_model_beta, n_head * d_v)
+        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model_alpha + d_k)))
+        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model_beta + d_k)))
+        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model_beta + d_v)))
 
         self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model_alpha)
 
-        self.fc = nn.Linear(n_head * d_v, d_model)
+        self.fc = nn.Linear(n_head * d_v, d_model_alpha)
         nn.init.xavier_normal_(self.fc.weight)
 
         self.dropout = nn.Dropout(dropout)

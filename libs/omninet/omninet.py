@@ -60,17 +60,27 @@ class OmniNet(nn.Module):
         self.cnp.reset(batch_size)
 
     def encode_videos(self,videos,domain='IMAGE'):
-        video_encodings = self.image_input_perph.encode(videos)
+        video_encodings,h,w = self.image_input_perph.encode(videos)
+        video_encodings = self.cnp.encode_with_patch(video_encodings,(h,w))
         self.cnp.encode(video_encodings,domain=domain)
 
     def encode_images(self,images,domain='IMAGE'):
-        image_encodings = self.image_input_perph.encode(images)
+        image_encodings,h,w = self.image_input_perph.encode(images)
+        image_encodings = self.cnp.encode_with_patch(image_encodings,(h,w))
         self.cnp.encode(image_encodings,domain=domain)
     
     def encode_englishtexts(self,texts,domain='ENGLISH'):
         sent_encodings,input_pad_mask=self.english_language_perph.embed_sentences(texts)
         self.cnp.encode(sent_encodings, pad_mask=input_pad_mask, domain=domain)
     
+    def encode_structured(self, structured, domain='STRUCT'):
+        cat_encodings = self.struct_entity_periph.encode(structured['cat'])
+        one_encoding = self.struct_perph.encode(structured)
+        return self.cnp.encode_structured(cat_encodings, one_encoding, domain=domain)
+
+    def cross_cache_attention(self):
+        self.cnp.cross_cache_attention()
+
     def decode_from_targets(self,task,targets,target_pad_mask=None):
         return self.cnp.decode(task, targets=targets,pad_mask=target_pad_mask)
     

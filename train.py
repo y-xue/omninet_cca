@@ -40,18 +40,59 @@ import sys
 from tqdm import tqdm
 from libs.utils.train_util import *
 
+from omninet_config import *
 
-coco_images = 'data/coco/train_val'
-caption_dir = 'data/coco'
-vqa_dir = 'data/vqa'
-model_save_path = 'checkpoints'
-hmdb_data_dir='data/hmdb'
-hmdb_process_dir='data/hmdbprocess'
-penn_data_dir='data/penn'
+parser = argparse.ArgumentParser(description='OmniNet training script.')
+parser.add_argument('n_iters', help='Number of iterations to train.')
+parser.add_argument('tasks', help='List of tasks seperated by comma.')
+parser.add_argument('batch_sizes', help='List of batch size for each task seperated by comma')
+parser.add_argument('--n_jobs', default=1, help='Number of asynchronous jobs to run for each task.')
+parser.add_argument('--n_gpus', default=1, help='Number of GPUs to use')
+parser.add_argument('--save_interval', default=100, help='Number of iterations after which to save the model.')
+parser.add_argument('--restore', default=-1, help='Step from which to restore model training')
+parser.add_argument('--restore_last', help='Restore the latest version of the model.', action='store_true')
+parser.add_argument('--eval_interval', help='Interval after which to evaluate on the test/val set.', default=1000)
+parser.add_argument('--all_seed', default=1029, type=int, help='seed')
+parser.add_argument('--data_path', default='/files/yxue/research/allstate/data', help='data path')
+parser.add_argument('--structured_folder', default='synthetic_structured_clustering_std2_valAcc66', help='path to structured data.')
+parser.add_argument('--conf_type', default='default', help='Choose confurigation types')
+parser.add_argument('--model_save_path', default='/out/test', help='path to save the model.')
+# parser.add_argument('--save_best', action='store_true', help='True if only save the model on validation.')
+
+args = parser.parse_args()
+
+data_path = args.data_path
+coco_images = os.path.join(data_path, 'coco/train_val')
+caption_dir = os.path.join(data_path, 'coco')
+vqa_dir = os.path.join(data_path, 'vqa')
+structured_path = os.path.join(data_path, 'vqa', args.structured_folder)
+hmdb_data_dir = data_path
+hmdb_process_dir = os.path.join(data_path, 'hmdbprocess')
+penn_data_dir = os.path.join(data_path, 'penn')
+
+# coco_images = 'data/coco/train_val'
+# caption_dir = 'data/coco'
+# vqa_dir = 'data/vqa'
+# model_save_path = 'checkpoints'
+# hmdb_data_dir='data/hmdb'
+# hmdb_process_dir='data/hmdbprocess'
+# penn_data_dir='data/penn'
+
+def seed_torch(seed=1029):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed) # if you are using multi-GPU.
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+seed_torch(int(args.all_seed))
 
 
 def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore,  counter, barrier=None, save_interval=None,
-          eval_interval=None, log=True):
+          eval_interval=None, log=True, eval_first=False):
     log_dir = 'logs/%s' % task
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -60,9 +101,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
         summary_writer = SummaryWriter(log_dir)
     # Create local model
      
-    torch.manual_seed(int(random.random() * 1000))
+    # torch.manual_seed(int(random.random() * 1000))
     if gpu_id>0:
-        model = omninet.OmniNet(gpu_id=gpu_id)
+        if args.conf_type == 'default':
+            config = defaultconf()
+        elif args.conf_type == 'cca':
+            config = cca_config()
+        model = omninet.OmniNet(gpu_id=gpu_id, config=config)
         model=model.cuda(gpu_id)
     else:
         #For GPU 0, use the shared model always
@@ -102,10 +147,36 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,init_lr=0.02)
-        
+    
+    if restore != 0:
+        # if args.save_best:
+        #     optimizer.restore(args.model_save_path, 'last/0')
+        # else:
+        optimizer.restore(args.model_save_path, restore)
+
+        tr_dl.dataset.resume_on()
+        val_dl.dataset.resume_on()
+        for i in range(1, restore+2):
+            if evaluating(log, eval_interval, i):
+                if i == (restore+1) and eval_first:
+                    continue
+                for b in val_dl:
+                    pass
+                continue
+            batch = next(DL)
+        val_dl.dataset.resume_off()
+        tr_dl.dataset.resume_off()
+
+    if os.path.exists(args.model_save_path + '/best/acc.pkl'):
+        with open(args.model_save_path + '/best/acc.pkl', 'rb') as f:
+            acc = pickle.load(f)
+        best_val_acc = acc['best_val_acc']
+    else:
+        best_val_acc = 0
+    
     model=model.train()
 
-    for i in range(start, train_steps):
+    for i in range(start+1, train_steps):
         model.zero_grad()
         if barrier is not None:
             barrier.wait()
@@ -152,6 +223,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             
         elif task == 'vqa':
             if (log and eval_interval is not None and i % eval_interval == 0):
+                if i == (start+1) and not eval_first:
+                    continue
                 model = model.eval()
                 val_loss = 0
                 val_acc=0
@@ -173,6 +246,18 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 summary_writer.add_scalar('Val_loss', val_loss, step)
                 print('Step %d, VQA validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
                 print('-' * 100)
+
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    best_iteration = step-1
+                    print(best_iteration)
+
+                    shared_model.save(args.model_save_path, 'best/0')
+                    optimizer.save(args.model_save_path, 'best/0')
+
+                    with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
+                        pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+
                 model = model.train()
                 continue
             batch = next(DL)
@@ -269,24 +354,22 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
         optimizer.step()
         # Save model
         if (save_interval != None and (i + 1) % save_interval == 0):
-            shared_model.save(model_save_path, step)
+            shared_model.save(args.model_save_path, step)
+            # if not args.save_best:
+            if step > save_interval:
+                os.rename(os.path.join(args.model_save_path,str(step-save_interval)),
+                    os.path.join(args.model_save_path,str(step)))
+
+            shared_model.save(args.model_save_path, step)
+            optimizer.save(args.model_save_path, step)
+
+            # if args.save_best and ((i+1)//save_interval + 1) * save_interval >= train_steps:
+            #     shared_model.save(args.model_save_path, 'last/0')
+            #     optimizer.save(args.model_save_path, 'last/0')
+
         sys.stdout.flush()
 
-    
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='OmniNet training script.')
-    parser.add_argument('n_iters', help='Number of iterations to train.')
-    parser.add_argument('tasks', help='List of tasks seperated by comma.')
-    parser.add_argument('batch_sizes', help='List of batch size for each task seperated by comma')
-    parser.add_argument('--n_jobs', default=1, help='Number of asynchronous jobs to run for each task.')
-    parser.add_argument('--n_gpus', default=1, help='Number of GPUs to use')
-    parser.add_argument('--save_interval', default=100, help='Number of iterations after which to save the model.')
-    parser.add_argument('--restore', default=-1, help='Step from which to restore model training')
-    parser.add_argument('--restore_last', help='Restore the latest version of the model.', action='store_true')
-    parser.add_argument('--eval_interval', help='Interval after which to evaluate on the test/val set.', default=1000)
-    
-    args = parser.parse_args()
-    torch.manual_seed(47)
     mp.set_start_method('spawn',force=True)
     n_iters = int(args.n_iters)
     n_jobs = int(args.n_jobs)
@@ -296,12 +379,12 @@ if __name__ == '__main__':
     eval_interval = int(int(args.eval_interval) / n_jobs)
 
     if args.restore_last == True:
-        ckpts = glob.glob(os.path.join(model_save_path, '*'))
-        iters = [int(os.path.basename(c)) for c in ckpts]
+        ckpts = glob.glob(os.path.join(args.model_save_path, '*'))
+        iters = [int(os.path.basename(c)) for c in ckpts if os.path.basename(c) != 'best']
         if len(iters) != 0:
             restore = max(iters)
         else:
-            restore = 0
+            restore = -1
     else:
         restore = int(args.restore)
     tasks=tasks.split(',')
@@ -315,11 +398,27 @@ if __name__ == '__main__':
     n_gpus = int(args.n_gpus)
     n_tasks = len(tasks) * n_jobs
 
-    shared_model = omninet.OmniNet(gpu_id=0)
+    if args.conf_type == 'default':
+        config = defaultconf()
+    elif args.conf_type == 'cca':
+        config = cca_config()
+
+    shared_model = omninet.OmniNet(gpu_id=0, config=config)
+
+    eval_first = False
     if restore != -1:
-        shared_model.restore(model_save_path, restore)
+        # if args.save_best:
+        #     shared_model.restore(args.model_save_path, 'last/0')
+        # else:
+        shared_model.restore(args.model_save_path, restore)
+        with open(args.model_save_path + '.log', 'r') as f:
+            log = f.read()
+        if len(re.findall('Step %s,'%(restore+1), log)) == 0:
+            eval_first = True
     else:
         restore=0
+        print(config)
+        print(args)
         
     shared_model=shared_model.to(0)
     shared_model.share_memory()
@@ -339,7 +438,8 @@ if __name__ == '__main__':
                                                  gpu_id, start, restore, counters[i % len(tasks)], barrier,
                                                  (save_interval if i == 0 else None),
                                                  (eval_interval if i < len(tasks) else None),
-                                                 (True if i < len(tasks) else False)))
+                                                 (True if i < len(tasks) else False)
+                                                 eval_first))
         process.start()
         processes.append(process)
     for p in processes:

@@ -24,7 +24,7 @@ OmniNet Central Neural Processor implementation
 from .Layers import *
 from ..util import *
 from torch.nn.functional import log_softmax, softmax
-
+from einops import rearrange, repeat
 
 class CNP(nn.Module):
 
@@ -42,6 +42,7 @@ class CNP(nn.Module):
         self.input_dim=conf['input_dim']
         self.control_dim=conf['control_dim']
         self.output_dim=conf['output_dim']
+        self.structured_dim=conf['structured_dim']
         self.spatial_dim=conf['spatial_dim']
         self.temporal_dim=conf['temporal_dim']
         self.temporal_n_layers=conf['temporal_n_layers']
@@ -59,6 +60,8 @@ class CNP(nn.Module):
         self.output_embedding_dim=conf['output_embedding_dim']
         self.dropout=conf['dropout']
         self.batch_size=-1 #Uninitilized CNP memory
+
+        self.use_cca=conf['use_cca']
 
         # Prepare the task lists and various output classifiers and embeddings
         if isinstance(tasks, dict):
@@ -78,6 +81,13 @@ class CNP(nn.Module):
                                                      self.temporal_n_heads,self.temporal_d_k,self.temporal_d_v,
                                                     self.temporal_dim,self.temporal_hidden_dim,dropout=self.dropout,
                                                      gpu_id=self.gpu_id)
+        if self.use_cca:
+            # TODO: add necessary configs
+            self.patch_embedding = PatchEmbedding(conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim)
+            self.cca = CrossCacheAttentionLayer(conf['caa_caches'], conf['cca_n_layers'], 
+                                                self.spatial_dim, self.structured_dim, self.temporal_dim, 
+                                                conf['cca_hidden_dim'], conf['cca_n_head'], conf['cca_d_k'], conf['cca_d_v'], 
+                                                dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'])
         self.decoder=Decoder(self.max_seq_len,self.decoder_n_layers,self.decoder_n_heads,self.decoder_d_k,
                              self.decoder_d_v,self.decoder_dim,self.decoder_hidden_dim,self.temporal_dim,
                              self.spatial_dim,self.output_dim, dropout=self.dropout,gpu_id=self.gpu_id)
@@ -85,10 +95,12 @@ class CNP(nn.Module):
         #Initialize the various CNP caches as empty
         self.spatial_cache=None
         self.temporal_cache=None
+        self.structured_cache=None
         self.decoder_cache=None
         self.temporal_spatial_link=[]
         self.pad_cache=None    #Used to store the padding values so that it can be used later in enc dec attn
-
+        self.structured_one_encoding=None
+        self.structured_logits=None
 
         #Various projection layers
         self.spatial_pool=nn.AdaptiveAvgPool1d(1)
@@ -98,6 +110,7 @@ class CNP(nn.Module):
         self.emb_decoder_proj=nn.Linear(self.output_embedding_dim,self.decoder_dim)
         self.cont_decoder_proj=nn.Linear(self.control_dim,self.decoder_dim)
         
+        self.combined_logit_proj=nn.Linear(self.structured_dim+self.output_dim)
         #freeze layers
 
         
@@ -125,6 +138,16 @@ class CNP(nn.Module):
             logits,=self.decoder(dec_inputs,self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
                                  self.pad_cache,
                                  recurrent_steps=recurrent_steps,pad_mask=pad_mask)
+
+            # if self.structured_cache is not None:
+            #     structured_logits,_ = self.structured_decoder(self.structured_cache)
+            #     structured_logits = self.structured_logits.expand(-1,t+1,-1)
+            #     logits = self.combined_logit_proj(torch.cat([logits, structured_logits], 2))
+                
+            if self.structured_logits is not None:
+                structured_logits = self.structured_logits.expand(-1,t+1,-1)
+                logits = self.combined_logit_proj(torch.cat([logits, structured_logits], 2))
+            
             #Predict using the task specific classfier
             predictions=self.output_clfs[self.task_dict[task]](logits)
             predictions=predictions[:,0:t,:]
@@ -149,6 +172,16 @@ class CNP(nn.Module):
                     
                 dec_inputs=torch.cat([dec_inputs,prediction],1)
             logits, = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,                                     self.pad_cache,recurrent_steps=recurrent_steps)
+
+            # if self.structured_cache is not None:
+            #     structured_logits,_ = self.structured_decoder(self.structured_cache)
+            #     structured_logits = self.structured_logits.expand(-1,num_steps,-1)
+            #     logits = self.combined_logit_proj(torch.cat([logits, structured_logits], 2))
+               
+            if self.structured_logits is not None:
+                structured_logits = self.structured_logits.expand(-1,t+1,-1)
+                logits = self.combined_logit_proj(torch.cat([logits, structured_logits], 2))
+            
             predictions = self.output_clfs[self.task_dict[task]](logits)
             return log_softmax(predictions,dim=2)
 
@@ -195,12 +228,36 @@ class CNP(nn.Module):
         else:
             self.pad_cache=torch.cat([self.pad_cache,pad_mask],1)
             
+
+    def encode_structured(self,cat_encodings,one_encoding,domain='EMPTY'):
+        self.structured_one_encoding = one_encoding.unsqueeze(1)
+        struct_encodings = torch.cat([cat_encodings, self.structured_one_encoding], dim=1)
+        control_vecs = self.control_peripheral(domain, (b, n))
+        struct_encodings = torch.cat([struct_encodings, control_vecs], 3)
+        structured_f=self.inpcont_input_proj(struct_encodings) # learns cross modality information?
+        if self.structured_cache is None:
+            self.structured_cache=structured_f
+        else:
+            self.structured_cache=torch.cat([self.structured_cache,structured_f],1)
+
+    def encode_with_patch(self, input):
+        if self.use_cca:
+            return self.patch_embedding(input)
+        return input
+
+    def cross_cache_attention(self):
+        if self.use_cca:
+            self.spatial_cache, self.temporal_cache, self.structured_cache, self.structured_logits = self.cca(self.spatial_cache, self.temporal_cache, self.structured_cache)
+
     def clear_spatial_cache(self):
         self.spatial_cache=None
 
     def clear_temporal_cache(self):
         self.temporal_raw_cache=None
         self.temporal_cache=None
+
+    def clear_structured_cache(self):
+        self.structured_cache=None
 
     def reset(self,batch_size=1):
         self.attn_scores=[]
@@ -209,6 +266,7 @@ class CNP(nn.Module):
         self.pad_cache=None
         self.clear_spatial_cache()
         self.clear_temporal_cache()
+        self.clear_structured_cache()
     
     @staticmethod
     def __defaultconf__():
@@ -309,6 +367,64 @@ class TemporalCacheEncoder(nn.Module):
             return enc_output, enc_slf_attn_list
         return enc_output,
 
+class PatchEmbedding(nn.Module):
+    ''' 
+    Decompose spatial cache elements into patches 
+    and add position embeddings
+    '''
+
+    def __init__(self, patch_sizes, len_max_frames, len_max_patches_h, len_max_patches_w, d_in, gpu_id=-1):
+        super(PatchEmbedding, self).__init__()
+
+        # self.num_patches = (image_size[0] // patch_sizes[0]) * (image_size[1] // patch_sizes[1])
+        
+        patch_dim = d_in * patch_sizes[0] * patch_sizes[1]
+        
+        # self.to_patch_embedding_linear = nn.Linear(patch_dim, d_in)
+        self.to_patch_embedding = nn.Conv2d(d_in, patch_dim, kernel_size=patch_sizes, stride=patch_sizes)
+        
+        self.patch_pos_h_emb = nn.Embedding(len_max_patches_h, d_in//4)
+        self.patch_pos_w_emb = nn.Embedding(len_max_patches_w, d_in//4)
+        self.frame_pos_emb = nn.Embedding(len_max_frames, d_in//2)
+
+        self.gpu_id = gpu_id
+
+    def forward(self, img_seq, img_size):
+        # print('SpatialCacheEncoder')
+        b, t, s, f = img_seq.shape
+        h, w = img_size
+
+        # ph, pw = self.patch_sizes
+        # s = ts // t
+        # h = w = int(s ** 0.5)
+        
+        # img_seq = rearrange(img_seq, 'b t (h w) f -> b t h w f', h=h, w=w)
+        # img_seq = rearrange(img_seq, 'b t (h ph) (w pw) f -> b (t h w) (ph pw f)', ph = ph, pw = pw)
+        # if ph*pw > 1:
+        #     img_seq = self.to_patch_embedding_linear(img_seq)
+        img_seq = rearrange(img_seq, 'b t (h w) f -> (b t) f h w', h=h, w=w)
+        patch_seq = self.to_patch_embedding(img_seq)
+        _, _, n_patches_h, n_patches_w = patch_seq.shape
+
+        patch_seq = rearrange(patch_seq, '(b t) f h w -> b (t h w) f', t=t)
+
+        # n_patches = patch_seq.shape[1]//t
+        # ppos = self.patch_pos_emb(torch.arange(n_patches, device=self.gpu_id))
+        ppos_h = self.patch_pos_h_emb(torch.arange(n_patches_h, device=self.gpu_id))
+        ppos_w = self.patch_pos_w_emb(torch.arange(n_patches_w, device=self.gpu_id))
+        ppos = torch.cat([ppos_h, ppos_w], dim=1)
+        ppos = ppos.repeat(t,1)
+
+        fpos = self.frame_pos_emb(torch.arange(t), device=self.gpu_id)
+        pos_dim = fpos.shape[1]
+        fpos = fpos.unsqueeze(2).expand(t,pos_dim,n_patches).transpose(1,2).reshape(t*n_patches,pos_dim)
+
+        xpos = torch.cat([fpos,ppos],dim=1)
+        patch_seq += xpos
+
+        patch_seq = rearrange(patch_seq, 'b (t p) f -> b t p f', p=n_patches)
+        
+        return patch_seq
 
 class Decoder(nn.Module):
 

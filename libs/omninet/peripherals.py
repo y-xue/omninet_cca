@@ -64,7 +64,7 @@ class ImageInputPeripheral(base_peripheral):
         if len(shape)==5:
             t_dim=image_tensor.shape[1]
             image_tensor=torch.reshape(image_tensor,(-1,3,shape[3],shape[4]))    
-        batch_size=image_tensor.shape[0]
+        batch_size,_,h,w=image_tensor
         image_enc=self.image_model(image_tensor)
         enc_reshape=torch.reshape(image_enc,[batch_size,self.feature_dim,-1])
         enc_transposed=torch.transpose(enc_reshape,1,2)
@@ -74,7 +74,7 @@ class ImageInputPeripheral(base_peripheral):
             output_enc=torch.reshape(output_enc,(-1,t_dim,output_enc.shape[1],output_enc.shape[2]))
         else:
             output_enc=output_enc.unsqueeze(1)
-        return output_enc
+        return output_enc,h,w
 
     def empty_fun(self,mode):
         pass
@@ -153,3 +153,23 @@ class LanguagePeripheral(base_peripheral):
     @property
     def id_EOS(self):
         return 2
+
+class StructuredEntityPeripheral(base_peripheral):
+    def __init__(self,output_dim,num_cat_dict):
+        """
+        num_cat_dict: {category idx (column id of input matrix): number of categories}
+        """
+        super(StructuredEntityPeripheral,self).__init__()
+
+        self.embedding_dict = dict([(k, nn.Embedding(num_cat_dict[k],output_dim)) for k in num_cat_dict])
+
+    def encode(self, s):
+        b, c = s.shape
+        entity_enc = []
+
+        for i in range(c):
+            entity_enc.append(self.embedding_dict[i](s[:,i]))
+
+        entity_enc = torch.stack(entity_enc, dim=1)
+
+        return entity_enc

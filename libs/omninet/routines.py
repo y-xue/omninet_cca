@@ -33,6 +33,9 @@ def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_ste
     omninet.reset(batch_size)
     #Encode video files
     omninet.encode_videos(videos,domain='IMAGE')
+
+    omninet.cross_cache_attention()
+    
     if mode in ['train','val']:
         predictions = omninet.decode_from_targets('HMDB',targets=targets)
     elif mode =='predict':
@@ -47,7 +50,7 @@ def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_ste
         predictions = predictions.argmax(-1)
     return predictions, loss, acc
 
-def vqa(omninet,images,questions,targets=None,mode='train',return_str_preds=False,num_steps=1):
+def vqa(omninet,images,questions,structured=None,targets=None,mode='train',return_str_preds=False,num_steps=1):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
@@ -55,6 +58,37 @@ def vqa(omninet,images,questions,targets=None,mode='train',return_str_preds=Fals
     omninet.encode_images(images,domain='IMAGE')
     # Encode and store questions
     omninet.encode_englishtexts(questions)
+
+    omninet.cross_cache_attention()
+
+    if mode in ['train','val']:
+        predictions = omninet.decode_from_targets('VQA', targets=targets)
+    elif mode=='predict':
+        predictions = omninet.decode_greedy('VQA', num_steps=num_steps)
+    # Calculate loss if targets is provided
+    if targets is not None:
+        loss, acc = calc_nll_loss_and_acc(predictions,targets)
+    else:
+        loss,acc=None, None
+    if return_str_preds:
+        # Return predictions in detokenized string format
+        predictions = predictions.argmax(-1)
+    return predictions, loss, acc
+
+def vqa_struct(omninet,images,questions,structured,targets=None,mode='train',return_str_preds=False,num_steps=1):
+    # Reset the cnp memory
+    batch_size = images.shape[0]
+    omninet.reset(batch_size)
+    # Encode and store images
+    omninet.encode_images(images,domain='IMAGE')
+    # Encode and store questions
+    omninet.encode_englishtexts(questions)
+    # Encode and store structured data
+    if structured is not None:
+        omninet.encode_structured(structured)
+
+    omninet.cross_cache_attention()
+
     if mode in ['train','val']:
         predictions = omninet.decode_from_targets('VQA', targets=targets)
     elif mode=='predict':
@@ -76,6 +110,9 @@ def image_caption(omninet,images,targets=None,mode='train',return_str_preds=Fals
     # Encode and store images
     omninet.encode_images(images,domain='IMAGE')
     #Calculate pad mask using the inbuilt tokenizer
+
+    omninet.cross_cache_attention()
+
     if targets is not None:
         targets,target_pad_mask = omninet.english_language_perph.tokenize_sentences(targets)
     if mode  in ['train','val']:
@@ -102,6 +139,9 @@ def penn(omninet,texts,pad_id=None,targets=None,target_pad_mask=None,mode='train
     omninet.reset(batch_size)
     #Store the sentences
     omninet.encode_englishtexts(texts, domain='ENGLISH')
+
+    omninet.cross_cache_attention()
+
     #Get the tokenized targets
     if mode in ['train','val']:
         predictions = omninet.decode_from_targets('PENN', targets=targets,target_pad_mask=target_pad_mask)
