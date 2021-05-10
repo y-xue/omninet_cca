@@ -48,6 +48,7 @@ parser.add_argument('tasks', help='List of tasks seperated by comma.')
 parser.add_argument('batch_sizes', help='List of batch size for each task seperated by comma')
 parser.add_argument('--n_jobs', default=1, help='Number of asynchronous jobs to run for each task.')
 parser.add_argument('--n_gpus', default=1, help='Number of GPUs to use')
+parser.add_argument('--n_workers', default=0, type=int, help='Number of workers to load data')
 parser.add_argument('--save_interval', default=100, help='Number of iterations after which to save the model.')
 parser.add_argument('--restore', default=-1, help='Step from which to restore model training')
 parser.add_argument('--restore_last', help='Restore the latest version of the model.', action='store_true')
@@ -58,6 +59,7 @@ parser.add_argument('--structured_folder', default='synthetic_structured_cluster
 parser.add_argument('--conf_type', default='default', help='Choose confurigation types')
 parser.add_argument('--model_save_path', default='/out/test', help='path to save the model.')
 # parser.add_argument('--save_best', action='store_true', help='True if only save the model on validation.')
+#parser.add_argument('--cca_caches', default=['spatial', 'temporal', 'structured'], help='caches ')
 
 args = parser.parse_args()
 
@@ -107,6 +109,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             config = defaultconf()
         elif args.conf_type == 'cca':
             config = cca_config()
+            #config[0]['caa_caches'] = args.caa_caches
         model = omninet.OmniNet(gpu_id=gpu_id, config=config)
         model=model.cuda(gpu_id)
     else:
@@ -115,7 +118,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
     if task == 'caption':
         DL,val_dl = dl.coco_cap_batchgen(caption_dir=caption_dir, image_dir=coco_images,
-                                  num_workers=8,
+                                  num_workers=args.n_workers,
                                   batch_size=batch_size)
         
         optimizer = ScheduledOptim(
@@ -124,14 +127,14 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,init_lr=0.02)
     elif task == 'vqa':
-        DL,val_dl = dl.vqa_batchgen(vqa_dir, coco_images, num_workers=8, batch_size=batch_size)
+        DL,val_dl = dl.vqa_batchgen(vqa_dir, coco_images, num_workers=args.n_workers, batch_size=batch_size)
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,max_lr=0.0001,init_lr=0.02)
     elif task == 'hmdb':
-        DL,val_dl=dl.hmdb_batchgen(hmdb_data_dir,hmdb_process_dir,num_workers=8,batch_size=batch_size,
+        DL,val_dl=dl.hmdb_batchgen(hmdb_data_dir,hmdb_process_dir,num_workers=args.n_workers,batch_size=batch_size,
                                    test_batch_size=int(batch_size/4),
                                    clip_len=16)
         optimizer = ScheduledOptim(
@@ -141,7 +144,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             512, 16000,restore,max_lr=0.0001,init_lr=0.02)
     elif task == 'penn':
         DL,val_dl,test_dl=dl.penn_dataloader(penn_data_dir,batch_size=batch_size,
-                                             test_batch_size=int(batch_size/2),num_workers=4,vocab_file='conf/penn_vocab.json')
+                                             test_batch_size=int(batch_size/2),num_workers=args.n_workers,vocab_file='conf/penn_vocab.json')
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
@@ -404,6 +407,7 @@ if __name__ == '__main__':
         config = cca_config()
 
     shared_model = omninet.OmniNet(gpu_id=0, config=config)
+    print('num of parameters:', sum(p.numel() for p in shared_model.parameters() if p.requires_grad))
 
     eval_first = False
     if restore != -1:
@@ -438,7 +442,7 @@ if __name__ == '__main__':
                                                  gpu_id, start, restore, counters[i % len(tasks)], barrier,
                                                  (save_interval if i == 0 else None),
                                                  (eval_interval if i < len(tasks) else None),
-                                                 (True if i < len(tasks) else False)
+                                                 (True if i < len(tasks) else False),
                                                  eval_first))
         process.start()
         processes.append(process)

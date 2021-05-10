@@ -155,7 +155,7 @@ class ResNet(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        # x = self.layer4(x) # comment out to get 14x14 feature maps
         # AVGPool and fc layer have been removed to get the 7x7 feature maps
         return x
 

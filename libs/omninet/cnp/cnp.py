@@ -83,8 +83,8 @@ class CNP(nn.Module):
                                                      gpu_id=self.gpu_id)
         if self.use_cca:
             # TODO: add necessary configs
-            self.patch_embedding = PatchEmbedding(conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim)
-            self.cca = CrossCacheAttentionLayer(conf['caa_caches'], conf['cca_n_layers'], 
+            self.patch_embedding = PatchEmbedding(self.input_dim, conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim, gpu_id=self.gpu_id)
+            self.cca = CrossCacheAttention(conf['cca_caches'], conf['cca_n_layers'], 
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
                                                 conf['cca_hidden_dim'], conf['cca_n_head'], conf['cca_d_k'], conf['cca_d_v'], 
                                                 dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'])
@@ -110,7 +110,7 @@ class CNP(nn.Module):
         self.emb_decoder_proj=nn.Linear(self.output_embedding_dim,self.decoder_dim)
         self.cont_decoder_proj=nn.Linear(self.control_dim,self.decoder_dim)
         
-        self.combined_logit_proj=nn.Linear(self.structured_dim+self.output_dim)
+        self.combined_logit_proj=nn.Linear(self.structured_dim+self.output_dim,self.output_dim)
         #freeze layers
 
         
@@ -240,14 +240,21 @@ class CNP(nn.Module):
         else:
             self.structured_cache=torch.cat([self.structured_cache,structured_f],1)
 
-    def encode_with_patch(self, input):
+    def encode_with_patch(self, input, img_size):
         if self.use_cca:
-            return self.patch_embedding(input)
+            return self.patch_embedding(input, img_size)
         return input
 
     def cross_cache_attention(self):
         if self.use_cca:
-            self.spatial_cache, self.temporal_cache, self.structured_cache, self.structured_logits = self.cca(self.spatial_cache, self.temporal_cache, self.structured_cache)
+            cca_out = self.cca(self.spatial_cache, 
+                               self.temporal_cache, 
+                               self.structured_cache,
+                               self.pad_cache)
+            self.spatial_cache = cca_out[0]
+            self.temporal_cache = cca_out[1]
+            self.structured_cache = cca_out[2]
+            self.structured_logits = cca_out[3]
 
     def clear_spatial_cache(self):
         self.spatial_cache=None
@@ -373,14 +380,13 @@ class PatchEmbedding(nn.Module):
     and add position embeddings
     '''
 
-    def __init__(self, patch_sizes, len_max_frames, len_max_patches_h, len_max_patches_w, d_in, gpu_id=-1):
+    def __init__(self, patch_dim, patch_sizes, len_max_frames, len_max_patches_h, len_max_patches_w, d_in, gpu_id=-1):
         super(PatchEmbedding, self).__init__()
 
         # self.num_patches = (image_size[0] // patch_sizes[0]) * (image_size[1] // patch_sizes[1])
-        
-        patch_dim = d_in * patch_sizes[0] * patch_sizes[1]
-        
+        # patch_dim = d_in * patch_sizes[0] * patch_sizes[1]
         # self.to_patch_embedding_linear = nn.Linear(patch_dim, d_in)
+
         self.to_patch_embedding = nn.Conv2d(d_in, patch_dim, kernel_size=patch_sizes, stride=patch_sizes)
         
         self.patch_pos_h_emb = nn.Embedding(len_max_patches_h, d_in//4)
@@ -390,8 +396,9 @@ class PatchEmbedding(nn.Module):
         self.gpu_id = gpu_id
 
     def forward(self, img_seq, img_size):
-        # print('SpatialCacheEncoder')
+        # print('PatchEmbedding')
         b, t, s, f = img_seq.shape
+        # print(img_seq.shape)
         h, w = img_size
 
         # ph, pw = self.patch_sizes
@@ -406,25 +413,213 @@ class PatchEmbedding(nn.Module):
         patch_seq = self.to_patch_embedding(img_seq)
         _, _, n_patches_h, n_patches_w = patch_seq.shape
 
-        patch_seq = rearrange(patch_seq, '(b t) f h w -> b (t h w) f', t=t)
+        # patch_seq = rearrange(patch_seq, '(b t) f h w -> b (t h w) f', t=t)
+        patch_seq = rearrange(patch_seq, '(b t) f h w -> b t h w f', t=t)
+        # print('patch_seq', patch_seq.shape)
 
         # n_patches = patch_seq.shape[1]//t
         # ppos = self.patch_pos_emb(torch.arange(n_patches, device=self.gpu_id))
         ppos_h = self.patch_pos_h_emb(torch.arange(n_patches_h, device=self.gpu_id))
         ppos_w = self.patch_pos_w_emb(torch.arange(n_patches_w, device=self.gpu_id))
-        ppos = torch.cat([ppos_h, ppos_w], dim=1)
-        ppos = ppos.repeat(t,1)
+        # print('ppos_h', ppos_h.shape)
+        # print('ppos_w', ppos_w.shape)
+        ppos_h = ppos_h.unsqueeze(1).expand(n_patches_h, n_patches_w, ppos_h.shape[-1])
+        ppos_w = ppos_w.expand(n_patches_h, n_patches_w, ppos_w.shape[-1])
+        ppos = torch.cat([ppos_h, ppos_w], dim=2)
+        # print('ppos', ppos.shape)
+        ppos = ppos.repeat(t,1,1,1)
+        # print('ppos', ppos.shape)
 
-        fpos = self.frame_pos_emb(torch.arange(t), device=self.gpu_id)
+        fpos = self.frame_pos_emb(torch.arange(t, device=self.gpu_id))
+        # print('fpos', fpos.shape)
         pos_dim = fpos.shape[1]
-        fpos = fpos.unsqueeze(2).expand(t,pos_dim,n_patches).transpose(1,2).reshape(t*n_patches,pos_dim)
+        n_patches = n_patches_h * n_patches_w
+        fpos = fpos.unsqueeze(2).expand(t,pos_dim,n_patches).transpose(1,2).reshape(t,n_patches_h,n_patches_w,pos_dim)
+        # print('fpos', fpos.shape)
 
-        xpos = torch.cat([fpos,ppos],dim=1)
+        xpos = torch.cat([fpos,ppos],dim=3)
+        # print('xpos', xpos.shape)
+        # print('patch_seq', patch_seq.shape)
         patch_seq += xpos
 
-        patch_seq = rearrange(patch_seq, 'b (t p) f -> b t p f', p=n_patches)
+        # patch_seq = rearrange(patch_seq, 'b (t p) f -> b t p f', p=n_patches)
+        patch_seq = rearrange(patch_seq, 'b t h w f -> b t (h w) f')
         
         return patch_seq
+
+class CrossCacheAttention(nn.Module):
+    def __init__(self, cache_names, n_layers, d_p, d_s, d_t, d_inner, n_head, d_k, d_v, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1):
+        super(CrossCacheAttention, self).__init__()
+        self.n_layers = n_layers
+        self.d_p = d_p
+        self.d_s = d_s
+        self.d_t = d_t
+        self.d_inner = d_inner
+        self.n_head = n_head
+        self.d_k = d_k
+        self.d_v = d_v
+        self.dropout_p = dropout_p
+        self.dropout_s = dropout_s
+        self.dropout_t = dropout_t
+        self.cache_names = cache_names
+
+        self.cache_symbols = []
+
+        if 'spatial' in cache_names:
+            self.cache_symbols.append('p')
+        if 'temporal' in cache_names:
+            self.cache_symbols.append('t')
+        if 'structured' in cache_names:
+            self.cache_symbols.append('s')
+        
+        self.streams = [''.join(list(perm)) for perm in list(permutations(self.cache_symbols, 2))]
+        # # remove streams toward structured
+        # self.streams = [stream_name for stream_name in self.streams if stream_name not in ['sp','st']]
+        self.streams.extend(self.cache_symbols)
+
+        self.cca_p_with_t = self.get_network('pt')
+        self.cca_p_with_s = self.get_network('ps')
+        self.cca_t_with_p = self.get_network('tp')
+        self.cca_t_with_s = self.get_network('ts')
+        self.cca_s_with_p = self.get_network('sp')
+        self.cca_s_with_t = self.get_network('st')
+        self.sa_s = self.get_network('s')
+
+        self.p_proj = nn.Linear(2*self.d_p, d_p)
+        self.t_proj = nn.Linear(2*self.d_t, d_t)
+        self.s_proj = nn.Linear(2*self.d_s, d_s)
+
+    def get_network(self, cca_type='t'):
+        if cca_type not in self.streams:
+            return None
+
+        if cca_type == 'pt':
+            d_model, attn_dropout = (self.d_t, self.d_p), self.dropout_t
+        elif cca_type == 'st':
+            d_model, attn_dropout = (self.d_t, self.d_s), self.dropout_t
+        elif cca_type == 'ps':
+            d_model, attn_dropout = (self.d_s, self.d_p), self.dropout_s
+        elif cca_type == 'ts':
+            d_model, attn_dropout = (self.d_s, self.d_t), self.dropout_s
+        elif cca_type == 'tp':
+            d_model, attn_dropout = (self.d_p, self.d_t), self.dropout_p
+        elif cca_type == 'sp':
+            d_model, attn_dropout = (self.d_p, self.d_s), self.dropout_p
+        elif cca_type == 's':
+            d_model, attn_dropout = self.d_s, self.dropout_s
+        else:
+            raise Exception('Unknow cca network type.')
+
+        return TransformerEncoderBlock(n_layers=self.n_layers, 
+                                       d_model=d_model, 
+                                       d_inner=self.d_inner, 
+                                       n_head=self.n_head,
+                                       d_k=self.d_k, 
+                                       d_v=self.d_v, 
+                                       dropout=attn_dropout)
+
+    def cca_stream(self, net, cache_alpha, cache_beta, pad_mask_q=None, pad_mask_k=None):
+        if cache_alpha is None:
+            return None,None
+
+        if cache_beta is None:
+            return cache_alpha,None
+
+        if pad_mask_k is not None:
+            attn_mask = get_attn_key_pad_mask(pad_mask_k, cache_alpha)
+        else:
+            attn_mask = None
+        non_pad_mask=get_non_pad_mask(cache_alpha,pad_mask_q)
+
+        return net(cache_alpha, non_pad_mask, enc_input_k=cache_beta, enc_input_v=cache_beta, attn_mask=attn_mask)
+
+    def combine_stream(self, stream_proj, stream_out1, stream_out2, target_cache):
+        if stream_out1 is not None and stream_out2 is not None:
+            return stream_proj(torch.cat([stream_out1, stream_out2], dim=2))
+        
+        if stream_out1 is not None:
+            return stream_out1
+        
+        if stream_out2 is not None:
+            return stream_out2
+        
+        return target_cache
+
+    def forward(self, spatial_cache, temporal_cache, structured_cache, pad_cache):
+        spatial_temporal_cache, _ = self.cca_stream(self.cca_p_with_t, 
+                                                    spatial_cache, 
+                                                    temporal_cache,
+                                                    pad_mask_k=pad_cache)
+        spatial_structured_cache, _ = self.cca_stream(self.cca_p_with_s, 
+                                                      spatial_cache, 
+                                                      structured_cache)
+        spatial_cross_cache = self.combine_stream(self.p_proj, 
+                                                  spatial_temporal_cache, 
+                                                  spatial_structured_cache, 
+                                                  spatial_cache)
+
+        temporal_spatial_cache, _ = self.cca_stream(self.cca_t_with_p, 
+                                                    temporal_cache, 
+                                                    spatial_cache,
+                                                    pad_mask_q=pad_cache)
+        temporal_structured_cache, _ = self.cca_stream(self.cca_t_with_s, 
+                                                       temporal_cache, 
+                                                       structured_cache,
+                                                       pad_mask_q=pad_cache)
+        temporal_cross_cache = self.combine_stream(self.t_proj, 
+                                                   temporal_spatial_cache, 
+                                                   temporal_structured_cache, 
+                                                   temporal_cache)
+
+        structured_temporal_cache, _ = self.cca_stream(self.cca_s_with_t, 
+                                                        structured_cache, 
+                                                        temporal_cache,
+                                                        pad_mask_k=pad_cache)
+        structured_spatial_cache, _ = self.cca_stream(self.cca_s_with_p, 
+                                                      structured_cache, 
+                                                      spatial_cache)
+        structured_cross_cache = self.combine_stream(self.p_proj, 
+                                                    structured_temporal_cache, 
+                                                    structured_spatial_cache, 
+                                                    structured_cache)
+        if structured_cross_cache is not None:
+            structured_logits = self.sa_s(structured_cross_cache, non_pad_mask=None)[0][-1] # use the last output for prediction
+        else:
+            structured_logits = None
+
+        # cross_cache_lst = []
+        # if 'pt' in self.streams:
+        #     spatial_temporal_cache, _ = self.cca_p_with_t(spatial_cache, temporal_cache, temporal_cache)
+        #     cross_cache_lst.append(spatial_temporal_cache)
+        # if 'ps' in self.streams:
+        #     spatial_structured_cache, _ = self.cca_p_with_s(spatial_cache, structured_cache, structured_cache)
+        #     cross_cache_lst.append(spatial_structured_cache)
+        # spatial_cross_cache = self.torch.cat(cross_cache_lst, dim=2)
+        # if len(cross_cache_lst) == 2:
+        #     spatial_cross_cache = self.p_proj(spatial_cross_cache)
+
+
+        # cross_cache_lst = []
+        # if 'tp' in self.streams:
+        #     temporal_spatial_cache, _ = self.cca_t_with_p(temporal_cache, spatial_cache, spatial_cache)
+        #     cross_cache_lst.append(temporal_spatial_cache)
+        # if 'ts' in self.streams:
+        #     temporal_structured_cache, _ = self.cca_t_with_s(temporal_cache, structured_cache, structured_cache)
+        #     cross_cache_lst.append(temporal_structured_cache)
+        # if len(cross_cache_lst) != 0:
+        #     temporal_cross_cache = torch.cat(cross_cache_lst, dim=2)
+
+        # cross_cache_lst = []
+        # if 'st' in self.streams:
+        #     structured_temporal_cache, _ = self.cca_s_with_t(structured_cache, temporal_cache, temporal_cache)
+        #     cross_cache_lst.append(structured_temporal_cache)
+        # if 'sp' in self.streams:
+        #     structured_spatial_cache, _ = self.cca_s_with_p(structured_cache, spatial_cache, spatial_cache)
+        #     cross_cache_lst.append(structured_spatial_cache)
+        # if len(cross_cache_lst) != 0:
+        #     structured_cross_cache = torch.cat(cross_cache_lst, dim=2)
+
+        return spatial_cross_cache, temporal_cross_cache, structured_cross_cache, structured_logits
 
 class Decoder(nn.Module):
 

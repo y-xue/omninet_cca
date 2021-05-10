@@ -45,8 +45,8 @@ class base_peripheral(nn.Module):
 
 
 class ImageInputPeripheral(base_peripheral):
-    def __init__(self,output_dim,dropout=0,weights_preload=True,freeze_layers=True):
-        self.feature_dim=2048  
+    def __init__(self,output_dim,feature_dim=2048,dropout=0,weights_preload=True,freeze_layers=True):
+        self.feature_dim=feature_dim 
         super(ImageInputPeripheral,self).__init__()
         self.image_model=resnet152(pretrained=weights_preload)
         if freeze_layers:
@@ -64,8 +64,8 @@ class ImageInputPeripheral(base_peripheral):
         if len(shape)==5:
             t_dim=image_tensor.shape[1]
             image_tensor=torch.reshape(image_tensor,(-1,3,shape[3],shape[4]))    
-        batch_size,_,h,w=image_tensor
         image_enc=self.image_model(image_tensor)
+        batch_size,_,h,w=image_enc.shape
         enc_reshape=torch.reshape(image_enc,[batch_size,self.feature_dim,-1])
         enc_transposed=torch.transpose(enc_reshape,1,2)
         drp_enc=self.enc_dropout(enc_transposed)

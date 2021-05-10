@@ -32,6 +32,7 @@ def defaultconf():
         'english_language_input_embed': 300,
         'english_language_output_vocab': 25000,
         'german_language_output_vocab': 25000,
+        'image_feature_dim': 2048,
         'dropout': 0.1 ,
         'vqa_output_vocab':3500,
         'hmdb_output_classes':52,
@@ -45,9 +46,11 @@ def defaultconf():
 def cca_config():
     cnp_conf, perph_conf, domains = defaultconf()
     cnp_conf['max_clip_len'] = 16
-    cnp_conf['max_patches'] = 49
-    cnp_conf['caa'] = True
-    cnp_conf['caa_caches'] = ['spatial', 'temporal', 'structured']
+    cnp_conf['max_patches_h'] = 7
+    cnp_conf['max_patches_w'] = 7
+    cnp_conf['patch_sizes'] = (2,2)
+    cnp_conf['use_cca'] = True
+    cnp_conf['cca_caches'] = ['spatial', 'temporal', 'structured']
     cnp_conf['cca_n_layers'] = 6
     cnp_conf['cca_n_head'] = 8
     cnp_conf['cca_hidden_dim'] = 4096
@@ -57,5 +60,7 @@ def cca_config():
     cnp_conf['dropout_s'] = 0.1
     cnp_conf['dropout_t'] = 0.1
     cnp_conf['structured_dim'] = 512
+
+    perph_conf['image_feature_dim'] = 1024
 
     return cnp_conf, perph_conf, domains
