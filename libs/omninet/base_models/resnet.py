@@ -171,8 +171,16 @@ def resnet152(pretrained=False, **kwargs):
         progress (bool): If True, displays a progress bar of the download to stderr
     """
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
+    rn152_path1 = '/files/yxue/research/resnet152'
+    rn152_path2 = '/scratch1/yxuea/data/models/torch'
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152']))
+        if os.path.exists(rn152_path1):
+            rnpath = rn152_path1
+        elif os.path.exists(rn152_path2):
+            rnpath = rn152_path2
+        else:
+            rnpath = None
+        model.load_state_dict(model_zoo.load_url(model_urls['resnet152'], rnpath))
     return model
 
 

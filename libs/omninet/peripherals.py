@@ -26,6 +26,9 @@ from torch.nn.functional import relu, log_softmax
 from .base_models.resnet import resnet50, resnet152
 from .util import *
 
+bpemb_pretrained_path1 = '/scratch1/yxuea/data/models/bpemb'
+bpemb_pretrained_path2 = '/files/yxue/research/bpemb'
+
 class base_peripheral(nn.Module):
     """
         The base standard non recursive perpheral
@@ -86,7 +89,13 @@ class LanguagePeripheral(base_peripheral):
         super(LanguagePeripheral,self).__init__()
         self.gpu_id=gpu_id
         self.pad_char = vocab_size
-        self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=True)
+        if os.path.exists(bpemb_pretrained_path1):
+            bpath = bpemb_pretrained_path1
+        elif os.path.exists(bpemb_pretrained_path2):
+            bpath = bpemb_pretrained_path2
+        else:
+            bpath = None
+        self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=True,cache_dir=bpath)
         # Add an extra padding character
         self.embed_layer=nn.Embedding(vocab_size+1,embed_dim,padding_idx=self.pad_char)
         if(embedding_preload==True):
