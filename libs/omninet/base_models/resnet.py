@@ -98,7 +98,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
+    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False, feature_map_layer=4):
         super(ResNet, self).__init__()
         self.inplanes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
@@ -112,6 +112,8 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.feature_map_layer=feature_map_layer
+        self.layers = [self.layer1, self.layer2, self.layer3, self.layer4]
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -152,9 +154,11 @@ class ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
+        for i in range(self.feature_map_layer):
+            x = self.layers[i](x)
+        # x = self.layer1(x)
+        # x = self.layer2(x)
+        # x = self.layer3(x)
         # x = self.layer4(x) # comment out to get 14x14 feature maps
         # AVGPool and fc layer have been removed to get the 7x7 feature maps
         return x

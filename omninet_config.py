@@ -23,7 +23,7 @@ def defaultconf():
         'decoder_hidden_dim':2048,
         'max_seq_len':500,
         'output_embedding_dim':300,
-        'caa':False,
+        'use_cca':False,
         'dropout':0.1}
     perph_conf = {
         'german_language_input_vocab': 25000,
@@ -62,5 +62,6 @@ def cca_config():
     cnp_conf['structured_dim'] = 512
 
     perph_conf['image_feature_dim'] = 1024
+    perph_conf['image_feature_map_layer'] = 3
 
     return cnp_conf, perph_conf, domains

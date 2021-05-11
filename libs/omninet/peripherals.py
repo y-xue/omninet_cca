@@ -45,10 +45,10 @@ class base_peripheral(nn.Module):
 
 
 class ImageInputPeripheral(base_peripheral):
-    def __init__(self,output_dim,feature_dim=2048,dropout=0,weights_preload=True,freeze_layers=True):
+    def __init__(self,output_dim,feature_dim=2048,feature_map_layer=4,dropout=0,weights_preload=True,freeze_layers=True):
         self.feature_dim=feature_dim 
         super(ImageInputPeripheral,self).__init__()
-        self.image_model=resnet152(pretrained=weights_preload)
+        self.image_model=resnet152(pretrained=weights_preload,feature_map_layer=feature_map_layer)
         if freeze_layers:
             self.image_model=self.image_model.eval()
             #Override the train mode So that it does not change when switching OmniNet to train mode

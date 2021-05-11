@@ -44,7 +44,7 @@ class OmniNet(nn.Module):
                  'IMAGE_CAPTION':pc['english_language_output_vocab'],'VQA':pc['vqa_output_vocab']}
         self.cnp = CNP(tasks,conf=cc,domains=d, gpu_id=gpu_id)
         
-        self.image_input_perph = ImageInputPeripheral(output_dim=cc['input_dim'], feature_dim=pc['image_feature_dim'],
+        self.image_input_perph = ImageInputPeripheral(output_dim=cc['input_dim'], feature_dim=pc['image_feature_dim'], feature_map_layer=pc['image_feature_map_layer'],
                                                                   dropout=pc['dropout'],freeze_layers=True)
         self.english_language_perph = LanguagePeripheral(vocab_size=pc['english_language_input_vocab'],
                                                                      embed_dim=pc['english_language_input_embed'],
