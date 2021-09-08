@@ -21,13 +21,12 @@ OmniNet standard input peripherals
 
 """
 
+import os
+
 from bpemb import BPEmb
 from torch.nn.functional import relu, log_softmax
 from .base_models.resnet import resnet50, resnet152
 from .util import *
-
-bpemb_pretrained_path1 = '/scratch1/yxuea/data/models/bpemb'
-bpemb_pretrained_path2 = '/files/yxue/research/bpemb'
 
 class base_peripheral(nn.Module):
     """
@@ -51,7 +50,7 @@ class ImageInputPeripheral(base_peripheral):
     def __init__(self,output_dim,feature_dim=2048,feature_map_layer=4,dropout=0,weights_preload=True,freeze_layers=True):
         self.feature_dim=feature_dim 
         super(ImageInputPeripheral,self).__init__()
-        self.image_model=resnet152(pretrained=weights_preload,feature_map_layer=feature_map_layer)
+        self.image_model=resnet152(pretrained=weights_preload, feature_map_layer=feature_map_layer)
         if freeze_layers:
             self.image_model=self.image_model.eval()
             #Override the train mode So that it does not change when switching OmniNet to train mode
@@ -85,21 +84,19 @@ class ImageInputPeripheral(base_peripheral):
 
 
 class LanguagePeripheral(base_peripheral):
-    def __init__(self,output_dim,vocab_size=10000,embed_dim=50,lang='en',embedding_preload=True,gpu_id=-1,dropout=0):
+    def __init__(self,output_dim,vocab_size=10000,embed_dim=50,lang='en',embedding_preload=True,gpu_id=-1,no_BOS_EOS=False,dropout=0):
         super(LanguagePeripheral,self).__init__()
+        self.no_BOS_EOS = no_BOS_EOS
         self.gpu_id=gpu_id
         self.pad_char = vocab_size
-        if os.path.exists(bpemb_pretrained_path1):
-            bpath = bpemb_pretrained_path1
-        elif os.path.exists(bpemb_pretrained_path2):
-            bpath = bpemb_pretrained_path2
-        else:
-            bpath = None
-        self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=True,cache_dir=bpath)
+        try:
+            self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir=os.getenv("BPEMB_CACHE"))
+        except:
+            self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir='/scratch1/yxuea/data/models/bpemb')
         # Add an extra padding character
         self.embed_layer=nn.Embedding(vocab_size+1,embed_dim,padding_idx=self.pad_char)
         if(embedding_preload==True):
-            self.embed_layer.load_state_dict({'weight': torch.tensor(self.bpe_encoder.emb.vectors)})
+            self.embed_layer.load_state_dict({'weight': torch.cat((torch.tensor(self.bpe_encoder.emb.vectors),torch.zeros(1,embed_dim)))})
             print("Loading pretrained word embeddings.")
         self.enc_dropout = nn.Dropout(dropout)
         self.output=nn.Linear(embed_dim,output_dim)
@@ -136,7 +133,10 @@ class LanguagePeripheral(base_peripheral):
 
 
     def tokenize_sentences(self,sentences):
-        tokens = self.bpe_encoder.encode_ids_with_bos_eos(sentences)
+        if not self.no_BOS_EOS:
+            tokens = self.bpe_encoder.encode_ids_with_bos_eos(sentences)
+        else:
+            tokens = self.bpe_encoder.encode_ids(sentences)
         # Pad the tokens with the pad_char
         max_len = 0
         
@@ -163,22 +163,47 @@ class LanguagePeripheral(base_peripheral):
     def id_EOS(self):
         return 2
 
+class StructuredPeripheral(base_peripheral):
+    def __init__(self,output_dim,raw_struct_dim,dropout=0.):
+        super(StructuredPeripheral,self).__init__()
+        self.fc = nn.Linear(raw_struct_dim, output_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def encode(self, s):
+        return self.fc(s) #self.dropout()
+
 class StructuredEntityPeripheral(base_peripheral):
-    def __init__(self,output_dim,num_cat_dict):
+    def __init__(self,output_dim,num_cat_dict,pretrained_path=None,vocab_size=25000,embed_dim=300,dropout=0.1):#,gpu_id=-1):
         """
         num_cat_dict: {category idx (column id of input matrix): number of categories}
         """
         super(StructuredEntityPeripheral,self).__init__()
+        # self.gpu_id = gpu_id
+        self.pretrained_path = pretrained_path
+        if pretrained_path is None:
+            self.embedding_dict = nn.ModuleDict(dict([(str(k), nn.Embedding(num_cat_dict[k],output_dim)) for k in num_cat_dict]))
+        else:
+            self.bpe_encoder=BPEmb(lang='en', vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir=pretrained_path)
+            embed_layer=nn.Embedding(vocab_size+1,embed_dim,padding_idx=vocab_size)
+            embed_layer.load_state_dict({'weight': torch.cat((torch.tensor(self.bpe_encoder.emb.vectors),torch.zeros(1,embed_dim)))})
+            print("StructuredEntityPeripheral Loading pretrained word embeddings.")
+            self.embedding_dict = nn.ModuleDict(dict([(str(k), nn.Embedding(num_cat_dict[k],embed_dim)) for k in [0,1]]+[(str(k), embed_layer) for k in [2,3,4]]))
+            self.output=nn.Linear(embed_dim,output_dim)
 
-        self.embedding_dict = dict([(k, nn.Embedding(num_cat_dict[k],output_dim)) for k in num_cat_dict])
+        self.dropout = nn.Dropout(dropout)
 
     def encode(self, s):
-        b, c = s.shape
+        b, f = s.shape
         entity_enc = []
 
-        for i in range(c):
-            entity_enc.append(self.embedding_dict[i](s[:,i]))
+        for i in range(f):
+            entity_enc.append(self.embedding_dict[str(i)](s[:,i]))
 
         entity_enc = torch.stack(entity_enc, dim=1)
-
+        # if self.gpu_id > -1:
+        #     entity_enc = entity_enc.cuda(self.gpu_id)
+        
+        entity_enc = self.dropout(entity_enc)
+        if self.pretrained_path is not None:
+            entity_enc = self.output(entity_enc)
         return entity_enc
