@@ -90,7 +90,7 @@ class LanguagePeripheral(base_peripheral):
         self.gpu_id=gpu_id
         self.pad_char = vocab_size
         try:
-            self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir=os.getenv("BPEMB_CACHE"))
+            self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir='/files/yxue/research/bpemb')
         except:
             self.bpe_encoder=BPEmb(lang=lang, vs=vocab_size,dim=embed_dim,add_pad_emb=False, cache_dir='/scratch1/yxuea/data/models/bpemb')
         # Add an extra padding character

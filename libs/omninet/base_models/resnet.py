@@ -1,4 +1,5 @@
 import torch
+import torch.utils.model_zoo as model_zoo
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -167,9 +168,11 @@ def resnet152(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
     if pretrained:
         try:
-            state_dict = torch.load('/scratch1/d3_acoe/DataSets/multimodal/omninet_data/torch/resnet152-b121ed2d.pth')
+            state_dict = torch.load('/files/yxue/research/resnet152/resnet152-b121ed2d.pth')
         except:
             state_dict = torch.load('/scratch1/yxuea/data/models/torch/resnet152-b121ed2d.pth')
+        finally:
+            state_dict = model_zoo.load_url(model_urls['resnet152'], '/files/yxue/research/resnet152')
         model.load_state_dict(state_dict)
     return model
 
