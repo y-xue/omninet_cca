@@ -1,6 +1,4 @@
-import torch.nn as nn
-import torch.utils.model_zoo as model_zoo
-
+import torch
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -17,25 +15,25 @@ model_urls = {
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return torch.nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+    return torch.nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
-class BasicBlock(nn.Module):
+class BasicBlock(torch.nn.Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn1 = torch.nn.BatchNorm2d(planes)
+        self.relu = torch.nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = torch.nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
 
@@ -58,18 +56,18 @@ class BasicBlock(nn.Module):
         return out
 
 
-class Bottleneck(nn.Module):
+class Bottleneck(torch.nn.Module):
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         self.conv1 = conv1x1(inplanes, planes)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = torch.nn.BatchNorm2d(planes)
         self.conv2 = conv3x3(planes, planes, stride)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = torch.nn.BatchNorm2d(planes)
         self.conv3 = conv1x1(planes, planes * self.expansion)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn3 = torch.nn.BatchNorm2d(planes * self.expansion)
+        self.relu = torch.nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
@@ -96,31 +94,31 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
+class ResNet(torch.nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False, feature_map_layer=4):
         super(ResNet, self).__init__()
         self.inplanes = 64
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = torch.nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.bn1 = torch.nn.BatchNorm2d(64)
+        self.relu = torch.nn.ReLU(inplace=True)
+        self.maxpool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
-        self.feature_map_layer=feature_map_layer
+        self.avgpool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = torch.nn.Linear(512 * block.expansion, num_classes)
+        self.feature_map_layer = feature_map_layer
         self.layers = [self.layer1, self.layer2, self.layer3, self.layer4]
 
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            if isinstance(m, torch.nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, torch.nn.BatchNorm2d):
+                torch.nn.init.constant_(m.weight, 1)
+                torch.nn.init.constant_(m.bias, 0)
 
         # Zero-initialize the last BN in each residual branch,
         # so that the residual branch starts with zeros, and each residual block behaves like an identity.
@@ -128,16 +126,16 @@ class ResNet(nn.Module):
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, Bottleneck):
-                    nn.init.constant_(m.bn3.weight, 0)
+                    torch.nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)
+                    torch.nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
+            downsample = torch.nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
-                nn.BatchNorm2d(planes * block.expansion),
+                torch.nn.BatchNorm2d(planes * block.expansion),
             )
 
         layers = []
@@ -146,7 +144,7 @@ class ResNet(nn.Module):
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
-        return nn.Sequential(*layers)
+        return torch.nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -154,12 +152,8 @@ class ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        for i in range(self.feature_map_layer):
+        for i in range(min(self.feature_map_layer, len(self.layers))):
             x = self.layers[i](x)
-        # x = self.layer1(x)
-        # x = self.layer2(x)
-        # x = self.layer3(x)
-        # x = self.layer4(x) # comment out to get 14x14 feature maps
         # AVGPool and fc layer have been removed to get the 7x7 feature maps
         return x
 
@@ -171,16 +165,12 @@ def resnet152(pretrained=False, **kwargs):
         progress (bool): If True, displays a progress bar of the download to stderr
     """
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
-    rn152_path1 = '/files/yxue/research/resnet152'
-    rn152_path2 = '/scratch1/yxuea/data/models/torch'
     if pretrained:
-        if os.path.exists(rn152_path1):
-            rnpath = rn152_path1
-        elif os.path.exists(rn152_path2):
-            rnpath = rn152_path2
-        else:
-            rnpath = None
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152'], rnpath))
+        try:
+            state_dict = torch.load('/scratch1/d3_acoe/DataSets/multimodal/omninet_data/torch/resnet152-b121ed2d.pth')
+        except:
+            state_dict = torch.load('/scratch1/yxuea/data/models/torch/resnet152-b121ed2d.pth')
+        model.load_state_dict(state_dict)
     return model
 
 
@@ -192,7 +182,8 @@ def resnet50(pretrained=False, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+        state_dict = torch.load('/scratch1/d3_acoe/DataSets/multimodal/omninet_data/torch/resnet50.pth')
+        model.load_state_dict(state_dict)
         print('Loading pretrained Resnet 50 weights.')
     return model
 
