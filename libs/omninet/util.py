@@ -29,7 +29,7 @@ from torch.autograd import Variable as var
 import numpy as np
 import torch
 from torch.autograd import Variable
-
+import os
 
 def recursiveTrace(obj):
   print(type(obj))
@@ -231,13 +231,14 @@ def print_gradient(x, name):
 class ScheduledOptim():
     '''A simple wrapper class for learning rate scheduling'''
 
-    def __init__(self, optimizer, d_model, n_warmup_steps,n_current_steps=0,init_lr=0.1,max_lr=None):
+    def __init__(self, optimizer, d_model, n_warmup_steps,n_current_steps=0,init_lr=0.1,max_lr=None,name='optimizer'):
         self._optimizer = optimizer
         self.n_warmup_steps = n_warmup_steps
         self.n_current_steps = n_current_steps
         self.init_lr = init_lr
         self.hidden_size=d_model
         self.max_lr=max_lr
+        self.name=name
     def step(self):
         "Step with the inner optimizer"
         self._update_learning_rate()
@@ -262,3 +263,25 @@ class ScheduledOptim():
             lr = self.init_lr * self._get_lr_scale()
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
+
+    def save(self, checkpoint_dir, iterations):
+        save_dir = os.path.join(checkpoint_dir, str(iterations))
+        try:
+            os.stat(save_dir)
+        except:
+            os.makedirs(save_dir)
+        if not hasattr(self, 'name'):
+            self.name = 'optimizer'
+        torch.save(self._optimizer.state_dict(), os.path.join(save_dir, '%s.pth'%self.name))
+
+    def restore(self, checkpoint_dir, iterations):
+        if not hasattr(self, 'name'):
+            self.name = 'optimizer'
+        save_dir = os.path.join(checkpoint_dir, str(iterations), '%s.pth'%self.name)
+        print(save_dir)
+        try:
+            checkpoint=torch.load(save_dir)
+            self._optimizer.load_state_dict(checkpoint)
+            print('Restored existing optimizer with iterations: {}'.format(iterations))
+        except:
+            print('Failed to restore optimizer with iterations: {}'.format(iterations))
