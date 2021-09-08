@@ -44,18 +44,26 @@ class OmniNet(nn.Module):
                  'IMAGE_CAPTION':pc['english_language_output_vocab'],'VQA':pc['vqa_output_vocab']}
         self.cnp = CNP(tasks,conf=cc,domains=d, gpu_id=gpu_id)
         
-        self.image_input_perph = ImageInputPeripheral(output_dim=cc['input_dim'], feature_dim=pc['image_feature_dim'], feature_map_layer=pc['image_feature_map_layer'],
-                                                                  dropout=pc['dropout'],freeze_layers=True)
+        self.image_input_perph = ImageInputPeripheral(output_dim=cc['input_dim'], 
+                                                      feature_dim=pc['image_feature_dim'],
+                                                      feature_map_layer=pc['image_feature_map_layer'],         
+                                                      dropout=pc['dropout'],freeze_layers=True)
         self.english_language_perph = LanguagePeripheral(vocab_size=pc['english_language_input_vocab'],
                                                                      embed_dim=pc['english_language_input_embed'],
                                                                      output_dim=cc['input_dim'],
-                                                                     lang='en',
+                                                                     lang='en', no_BOS_EOS=pc['no_BOS_EOS'],
                                                                      gpu_id=gpu_id,dropout=pc['dropout'])
         self.german_language_perph = LanguagePeripheral(vocab_size=pc['german_language_input_vocab'],
                                                                     embed_dim=pc['german_language_input_embed'],
                                                                     output_dim=cc['input_dim'],
-                                                                    lang='de',
+                                                                    lang='de', no_BOS_EOS=pc['no_BOS_EOS'],
                                                                     gpu_id=gpu_id)
+        raw_struct_dim=sum(pc['num_cat_dict'].values())+pc['num_conti'] 
+        if raw_struct_dim != 0:
+            self.struct_periph = StructuredPeripheral(output_dim=cc['structured_dim'], raw_struct_dim=raw_struct_dim,dropout=pc['dropout'])
+        if len(pc['num_cat_dict']) != 0 and not pc['one_hot_only']:
+            self.struct_entity_periph = StructuredEntityPeripheral(output_dim=cc['structured_dim'], num_cat_dict=pc['num_cat_dict'], pretrained_path=pc['entity_pretrained_emb_path'], dropout=pc['se_dropout']) #, gpu_id=gpu_id)
+
     def reset(self,batch_size):
         self.cnp.reset(batch_size)
 
@@ -73,13 +81,16 @@ class OmniNet(nn.Module):
         sent_encodings,input_pad_mask=self.english_language_perph.embed_sentences(texts)
         self.cnp.encode(sent_encodings, pad_mask=input_pad_mask, domain=domain)
     
-    def encode_structured(self, structured, domain='STRUCT'):
-        cat_encodings = self.struct_entity_periph.encode(structured['cat'])
-        one_encoding = self.struct_perph.encode(structured)
-        return self.cnp.encode_structured(cat_encodings, one_encoding, domain=domain)
+    def encode_structured(self, structured_one_hot, structured=None, domain='STRUCT'):
+        if structured_one_hot is not None:
+            structured_one_hot = self.struct_periph.encode(structured_one_hot)
+        if structured is not None:
+            structured = self.struct_entity_periph.encode(structured)
+        return self.cnp.encode_structured(structured, structured_one_hot, domain=domain)
+        #return self.cnp.encode_structured(None, struct_one_encoding, domain=domain)
 
     def cross_cache_attention(self):
-        self.cnp.cross_cache_attention()
+        return self.cnp.cross_cache_attention()
 
     def decode_from_targets(self,task,targets,target_pad_mask=None):
         return self.cnp.decode(task, targets=targets,pad_mask=target_pad_mask)
@@ -92,21 +103,24 @@ class OmniNet(nn.Module):
         try:
             os.stat(save_dir)
         except:
-            os.mkdir(save_dir)
+            os.makedirs(save_dir)
         torch.save(self.state_dict(), os.path.join(save_dir, 'model.pth'))
-        print('Model saved, iterations: %d' % iterations)
+        print('Model saved, iterations: {}'.format(iterations))
+
+    def rename_mha_checkpoint(self, pretrained_dict):
+        return {k.replace('mha', 'slf_attn'): v for k, v in pretrained_dict.items()}
 
     def restore(self, checkpoint_dir, iterations):
         save_dir = os.path.join(checkpoint_dir, str(iterations), 'model.pth')
-        pretrained_dict=torch.load(save_dir)
+        pretrained_dict=self.rename_mha_checkpoint(torch.load(save_dir))
         model_dict=self.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if
                        (k in model_dict) and (model_dict[k].shape == pretrained_dict[k].shape)}
         self.load_state_dict(pretrained_dict,strict=False)
-        print('Restored existing model with iterations: %d' % (iterations))
+        print('Restored existing model with iterations: {}'.format(iterations))
     
     def restore_file(self, file):
-        pretrained_dict=torch.load(file)
+        pretrained_dict=self.rename_mha_checkpoint(torch.load(file))
         model_dict=self.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if
                        (k in model_dict) and (model_dict[k].shape == pretrained_dict[k].shape)}
