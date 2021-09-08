@@ -50,21 +50,28 @@ def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_ste
         predictions = predictions.argmax(-1)
     return predictions, loss, acc
 
-def vqa(omninet,images,questions,structured=None,targets=None,mode='train',return_str_preds=False,num_steps=1):
+def vqa(omninet,images,questions,structured=None,structured_one_hot=None,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
     # Encode and store images
     omninet.encode_images(images,domain='IMAGE')
     # Encode and store questions
-    omninet.encode_englishtexts(questions)
+    if isinstance(questions[0], list):
+        for i in range(len(questions[0])):
+            omninet.encode_englishtexts([q[i] for q in questions])
+    else:
+        omninet.encode_englishtexts(questions)
 
-    omninet.cross_cache_attention()
+    if structured is not None or structured_one_hot is not None:
+        omninet.encode_structured(structured_one_hot, structured=structured)
 
-    if mode in ['train','val']:
-        predictions = omninet.decode_from_targets('VQA', targets=targets)
-    elif mode=='predict':
-        predictions = omninet.decode_greedy('VQA', num_steps=num_steps)
+    attns = omninet.cross_cache_attention()
+
+    if mode in ['train','val'] and not greedy_only:
+        predictions, l1_loss_struct = omninet.decode_from_targets('VQA', targets=targets)
+    elif mode=='predict' or greedy_only:
+        predictions, l1_loss_struct = omninet.decode_greedy('VQA', num_steps=num_steps)
     # Calculate loss if targets is provided
     if targets is not None:
         loss, acc = calc_nll_loss_and_acc(predictions,targets)
@@ -73,9 +80,14 @@ def vqa(omninet,images,questions,structured=None,targets=None,mode='train',retur
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    return predictions, loss, acc
+    try:
+        if attns is not None:
+            return predictions, loss, acc, l1_loss_struct, attns
+    except:
+        pass
+    return predictions, loss, acc, l1_loss_struct
 
-def vqa_struct(omninet,images,questions,structured,targets=None,mode='train',return_str_preds=False,num_steps=1):
+def vqa_struct(omninet,images,questions,structured,structured_one_hot=None,targets=None,mode='train',return_str_preds=False,num_steps=1):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
@@ -84,8 +96,8 @@ def vqa_struct(omninet,images,questions,structured,targets=None,mode='train',ret
     # Encode and store questions
     omninet.encode_englishtexts(questions)
     # Encode and store structured data
-    if structured is not None:
-        omninet.encode_structured(structured)
+    if structured is not None or structured_one_hot is not None:
+        omninet.encode_structured(structured_one_hot, structured=structured)
 
     omninet.cross_cache_attention()
 
