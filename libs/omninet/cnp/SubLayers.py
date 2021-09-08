@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
+import math
 
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
@@ -41,7 +41,7 @@ class ScaledDotProductAttention(nn.Module):
         if k_gate is not None:
             attn=torch.mul(attn,k_gate)
         if mask is not None:
-            attn = attn.masked_fill(mask, -np.inf)
+            attn = attn.masked_fill(torch.gt(mask, 0), -np.inf)
         attn = self.softmax(attn)
         attn = self.dropout(attn)
         output = torch.bmm(attn, v)
@@ -80,7 +80,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
 
-    def forward(self, q, k, v, mask=None,k_gate=None):
+    def forward(self, q, k, v, mask=None,k_gate=None, res=False, drop_path=None):
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
@@ -92,7 +92,8 @@ class MultiHeadAttention(nn.Module):
             k_gate = k_gate.transpose(0, 1)
             k_gate=k_gate.reshape(n_head*sz_b,len_q,len_v)
 
-        residual = q
+        if res:
+            residual = q
 
         q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
         k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
@@ -109,11 +110,12 @@ class MultiHeadAttention(nn.Module):
         output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
 
         output = self.dropout(self.fc(output))
-        output = self.layer_norm(output + residual)
+        if drop_path is not None:
+            output = drop_path(output)
+        if res:
+            output = self.layer_norm(output + residual)
         attn=attn.view(n_head,sz_b,len_q,len_v).transpose(0,1)
         return output, attn
-
-
 
 class PositionwiseFeedForward(nn.Module):
     ''' A two-feed-forward-layer module '''
@@ -133,4 +135,49 @@ class PositionwiseFeedForward(nn.Module):
         output = self.layer_norm(output + residual)
         return output
 
+def gelu(x):
+    return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
 
+class Mlp(nn.Module):
+    ''' A two-feed-forward-layer module '''
+
+    def __init__(self, d_in, d_hid, act_layer=gelu, dropout=0.1):
+        super().__init__()
+        self.w_1 = nn.Linear(d_in, d_hid) # position-wise
+        self.act = act_layer
+        self.w_2 = nn.Linear(d_hid, d_in) # position-wise
+        self.layer_norm = nn.LayerNorm(d_in)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, res=False, drop_path=None):
+        if res:
+            residual = x
+        output = x
+        output = self.dropout(self.act(self.w_1(output)))
+        output = self.dropout(self.w_2(output))
+        if drop_path is not None:
+            output = drop_path(output)
+        if res:
+            output = self.layer_norm(output + residual)
+        return output
+
+"""
+class Mlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=gelu, drop=0.1):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.layer_norm = nn.LayerNorm(in_features)
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+"""
