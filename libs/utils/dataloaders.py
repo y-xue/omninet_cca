@@ -1,4 +1,4 @@
-#
+
 # Copyright 2019 Subhojeet Pramanik, Aman Husain, Priyanka Agrawal
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +38,7 @@ from torchvision.datasets import ImageFolder
 # the following is required for the lib to work in terminal env
 import matplotlib
 
-matplotlib.use("agg", warn=False, force=True)
+matplotlib.use("agg", force=True)
 from .cocoapi.coco import COCO
 
 
@@ -376,11 +376,25 @@ def coco_collate_fn(data):
 
 
 class vqa_dataset(Dataset):
-    def __init__(self, ques_file, ann_file, image_dir,vocab_file, transforms=None):
+    def __init__(self, ques_file, ann_file, image_dir,vocab_file, transforms=None, structured_data=None, non_ma_only=False, two_ques_file=None, aug_text_file=None):
         vqa = VQA(annotation_file=ann_file, question_file=ques_file)
+        if two_ques_file is not None:
+            with open(two_ques_file, 'rb') as f:
+                two_ques_dict = pickle.load(f)
+
+        self.aug_text_file = aug_text_file
+        if aug_text_file is not None:
+            with open(aug_text_file, 'rb') as f:
+                aug_text_dict = pickle.load(f)
         self.imgs = []
         self.ques = []
+        self.ques_ids = []
         self.ans = []
+        self.ans_str = []
+        self.structured = []
+        n_features = len(structured_data[list(structured_data.keys())[0]]) if structured_data is not None else 0
+        print('n_features:', n_features)
+        # self.is_mas = []
         with open(vocab_file,'rb') as f:
             ans_to_id,id_to_ans=pickle.loads(f.read())
         # load the questions
@@ -391,13 +405,42 @@ class vqa_dataset(Dataset):
             # get the path
             answer = vqa.loadQA(x['question_id'])
             m_a=answer[0]['multiple_choice_answer']
-            if m_a in ans_to_id:
+            if (m_a in ans_to_id and not non_ma_only) or (m_a not in ans_to_id and non_ma_only):
+                # if m_a in ans_to_id:
+                #     self.is_mas.append(True)
+                # else:
+                #     self.is_mas.append(False)
                 img_file = os.path.join(image_dir, '%012d.jpg' % (x['image_id']))
                 self.imgs.append(img_file)
                 # get the vector representation
                 words = x['question']
+                if two_ques_file is not None:
+                    # while True:
+                    #     another_ques = ques[np.random.randint(len(ques))]
+                    #     if another_ques['question_id'] != x['question_id'] and another_ques['image_id'] != x['image_id']:
+                    #         break
+                    # another_words = another_ques['question']
+                    # if np.random.random() < 0.5:
+                    #     words = words + ' ' + another_words
+                    # else:
+                    #     words = another_words + ' ' + words
+                    words = two_ques_dict[x['question_id']]
+                if aug_text_file is not None:
+                    words = [words] + aug_text_dict[x['question_id']]['aug_ques']
                 self.ques.append(words)
-                self.ans.append(ans_to_id[m_a])
+                if m_a in ans_to_id:
+                    self.ans.append(ans_to_id[m_a])
+                else:
+                    self.ans.append(0)
+                self.ans_str.append(m_a)
+                self.ques_ids.append(x['question_id'])
+                if structured_data is not None:
+                    if x['question_id'] in structured_data:
+                        self.structured.append(structured_data[x['question_id']])
+                    else:
+                        self.structured.append(np.random.randint(0,1000,n_features))
+        print('ques[7252]', self.ques[7252])
+        print('ques[-1]', self.ques[-1])
         self.transform = transforms
         self.N=len(self.ques)
     def __len__(self):
@@ -411,13 +454,30 @@ class vqa_dataset(Dataset):
         else:
             img = transforms.ToTensor()(img).convert("RGB")
         ques = self.ques[idx]
+        if self.aug_text_file is not None:
+            ques = np.random.choice(ques)
         ans = self.ans[idx]
+        ans_str = self.ans_str[idx]
+        ques_id = self.ques_ids[idx]
+        # is_ma = self.is_mas[idx]
+        struct = None
+        if len(self.structured) != 0:
+            struct = torch.as_tensor(self.structured[idx]).float()
         # finally return dictionary of images, questions and answers
         # for a given index
-        return {'img': img, 'ques': ques, 'ans': ans}
+        return {'img': img, 'ques': ques, 'ans': ans, 'ques_id': ques_id, 'struct': struct, 'ans_str': ans_str} #, 'is_ma': is_ma}
 
 
-def vqa_batchgen(vqa_dir, image_dir, num_workers=1, batch_size=1):
+def vqa_batchgen(vqa_dir, image_dir, num_workers=1, batch_size=1, structured_path=None, data_seed=68, two_ques_file=None, aug_text_file=None):
+        random.seed(data_seed)
+        np.random.seed(data_seed)
+        torch.manual_seed(data_seed)
+
+        structured_data = None
+        if structured_path is not None:
+            with open(structured_path, 'rb') as f:
+                structured_data = pickle.load(f)
+
         # a transformation for the images
         vqa_train_ques=os.path.join(vqa_dir,'v2_OpenEnded_mscoco_train2014_questions.json')
         vqa_train_ann=os.path.join(vqa_dir,'v2_mscoco_train2014_annotations.json')
@@ -433,7 +493,7 @@ def vqa_batchgen(vqa_dir, image_dir, num_workers=1, batch_size=1):
             normalize,
         ])
         # the dataset
-        dataset = vqa_dataset(vqa_train_ques, vqa_train_ann, image_dir, vocab_file, transforms=transformer)
+        dataset = vqa_dataset(vqa_train_ques, vqa_train_ann, image_dir, vocab_file, transforms=transformer, structured_data=structured_data, two_ques_file=two_ques_file, aug_text_file=aug_text_file)
         # the data loader
         dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                                      collate_fn= vqa_collate_fn, drop_last=True,pin_memory=True)
@@ -443,24 +503,42 @@ def vqa_batchgen(vqa_dir, image_dir, num_workers=1, batch_size=1):
             transforms.ToTensor(),
             normalize,
         ])
-        val_dataset = vqa_dataset(vqa_val_ques, vqa_val_ann, image_dir, vocab_file, transforms=val_tfms)
+        val_dataset = vqa_dataset(vqa_val_ques, vqa_val_ann, image_dir, vocab_file, transforms=val_tfms, structured_data=structured_data, two_ques_file=two_ques_file)
         # the data loader
         val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
                                      collate_fn=vqa_collate_fn, drop_last=False)
+
+        val_non_ma_dataset = vqa_dataset(vqa_val_ques, vqa_val_ann, image_dir, vocab_file, transforms=val_tfms, structured_data=structured_data, non_ma_only=True, two_ques_file=two_ques_file)
+        # the data loader
+        val_non_ma_dataloader = DataLoader(val_non_ma_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
         # the iterator
         itr = iter(cycle(dataloader))
-        return itr,val_dataloader
+        return itr,val_dataloader,val_non_ma_dataloader
 
 
 def vqa_collate_fn(data):
     # the collate function for dataloader
     collate_images = []
     collate_ques = []
+    collate_ques_ids = []
     collate_ans=[]
+    collate_ans_str=[]
+    # collate_is_mas=[]
+    collate_struct = []
     for d in data:
         collate_images.append(d['img'])
         collate_ques.append(d['ques'])
+        collate_ques_ids.append(d['ques_id'])
         collate_ans.append((d['ans']))
+        collate_ans_str.append(d['ans_str'])
+        # collate_is_mas.append(d['is_ma'])
+        if d['struct'] is not None:
+            collate_struct.append((d['struct']))
+    if len(collate_struct) != 0:
+        collate_struct = torch.stack(collate_struct, dim=0)
+        
     collate_images = torch.stack(collate_images, dim=0)
     collate_ans=torch.tensor(collate_ans).reshape([-1,1])
     # return a dictionary of images and captions
@@ -468,7 +546,10 @@ def vqa_collate_fn(data):
     return {
         'img': collate_images,
         'ques': collate_ques,
-        'ans': collate_ans
+        'ans': collate_ans,
+        'ans_str': collate_ans_str,
+        'ques_id': collate_ques_ids,
+        'struct': collate_struct
     }
 
 class penn_dataset(Dataset):
