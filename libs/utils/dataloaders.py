@@ -754,6 +754,7 @@ def social_iq_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, stru
     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                                  collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
     
+    print('# of training mini-batches:', len(dataloader))
     val_dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='val')
     val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
                                  collate_fn=social_iq_collate_fn, drop_last=False)

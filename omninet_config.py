@@ -42,6 +42,7 @@ def defaultconf():
         'vqa_output_vocab':3500,
         'hmdb_output_classes':52,
         'penn_output_classes':48,
+        'SIQ_output_classes':2,
         'no_BOS_EOS': False,
         'num_conti': 0,
         'num_cat_dict': {},

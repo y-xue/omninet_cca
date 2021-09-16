@@ -134,6 +134,7 @@ coco_images = os.path.join(data_path, 'coco/train_val')
 caption_dir = os.path.join(data_path, 'coco')
 vqa_dir = os.path.join(data_path, 'vqa')
 socialiq_dir = os.path.join(data_path, 'socialiq')
+socialiq_video_folder = 'vision/videos_1fps_640-360_resized'
 
 structured_path = None
 num_cat_dict = {}
@@ -310,7 +311,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,init_lr=args.init_lr)
     elif task == 'socialiq':
-        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=args.socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
@@ -482,10 +483,12 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):
                 if i == (start+1) and not eval_first:
                     continue
+                start_time = time.time()
                 model = model.eval()
                 val_loss = 0
                 val_acc=0
                 log_str += '-'*100 + '\nEvaluation step\n'
+                print('-'*100 + '\nEvaluation step')
                 for b in tqdm(val_dl):
                     imgs = b['videos']
                     labels = b['labels']
@@ -495,7 +498,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     questions = b['ques']
                     answers = b['ans']
 
-                    pred, loss, acc, _ = r.socialiq(model, imgs, questions, answers, targets=labels,mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    pred, loss, acc = r.socialiq(model, imgs, questions, answers, targets=labels,mode='val',return_str_preds=True, greedy_only=args.greedy_only)
                     val_loss += float(loss.detach().cpu().numpy())
                     val_acc += acc
                 val_loss/=len(val_dl)
@@ -504,11 +507,16 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
                 log_str += 'Step %d, SIQ validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc)
                 log_str += '-'*100 + '\n'
+                print('Step %d, SIQ validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
+                print('-'*100 )
+
+                print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
 
                 if val_acc > best_val_acc:
                     best_val_acc = val_acc
                     best_iteration = step-1
                     log_str += 'best_iteration:{}\n'.format(best_iteration)
+                    print('best_iteration:{}'.format(best_iteration))
 
                     shared_model.save(args.model_save_path, 'best/0')
                     optimizer.save(args.model_save_path, 'best/0')
@@ -529,13 +537,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 labels = labels.cuda(device=gpu_id)
             questions = batch['ques']
             answers = batch['ans']
-            _, loss,acc,_ = r.socialiq(model, imgs, questions, answers, targets=labels, greedy_only=args.greedy_only)
+            _, loss,acc = r.socialiq(model, imgs, questions, answers, targets=labels, greedy_only=args.greedy_only)
             loss.backward()
             loss=loss.detach()
             if log:
                 summary_writer.add_scalar('Loss', loss, step)
             log_str += 'Step %d, SIQ Loss: %f, Accuracy:  %f %%\n' % (step, loss,acc)
-            
+            print('Step %d, SIQ Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
 
         elif task == 'vqa':
             if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):

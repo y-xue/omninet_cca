@@ -27,11 +27,21 @@ def process_video(vdir, odir):
             video_path = os.path.join(root,f)
 
             video_name = f.split('.')[0]
-            images_dir = os.path.join(odir, video_name)
-            os.makedirs(images_dir)
-            resized_images_dir = os.path.join(odir+'_resized', video_name)
-            os.makedirs(resized_images_dir)
 
+            images_dir = os.path.join(odir, video_name)
+            if not os.path.exists(images_dir):
+            	os.makedirs(images_dir)
+
+            resized_images_dir = os.path.join(odir+'_resized', video_name)
+            if not os.path.exists(resized_images_dir):
+            	os.makedirs(resized_images_dir)
+
+            num_frames = len(os.listdir(resized_images_dir))
+            if num_frames >= 30:
+            	nframes[video_name] = num_frames
+            	continue
+
+            print(resized_images_dir, num_frames)
             capture = cv2.VideoCapture(video_path)
             frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
             frame_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -40,6 +50,8 @@ def process_video(vdir, odir):
             # original fps=30
             # set extract fps=1
             EXTRACT_FREQUENCY = 30
+            if frame_count // EXTRACT_FREQUENCY < 30:
+            	EXTRACT_FREQUENCY = frame_count // 30
 
             count = 0
             i = 0
@@ -137,9 +149,18 @@ def split(vdir, odir):
     with open(os.path.join(odir,'split.dict.pkl'), 'wb') as f:
         pickle.dump(split_dict, f)
 
-process_qa(train_qa_dir, train_qa_processed_dir)
-process_qa(test_qa_dir, test_qa_processed_dir)
-split(train_video_dir, data_dir+'/train')
-
-# process_video(train_video_dir, train_processed_dir)
+process_video(train_video_dir, train_processed_dir)
 # process_video(test_video_dir, test_processed_dir)
+
+# process_qa(train_qa_dir, train_qa_processed_dir)
+# process_qa(test_qa_dir, test_qa_processed_dir)
+# split(train_video_dir, data_dir+'/train')
+
+# test video length
+# (array([35, 43, 44, 46, 47, 48, 49, 50, 52, 56, 57, 58, 59, 60]), array([ 1,  1,  1,  2,  3, 19,  3, 10,  1,  3,  1, 11,  6, 38]))
+# train video length
+# (array([  2,  18,  26,  27,  30,  32,  34,  36,  37,  39,  40,  42,  43,
+#         44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,
+#         57,  58,  59,  60, 117]), array([  1,   1,   1,   2,   4,   3,   1,   2,   3,   1,   5,   1,   3,
+#          4,  15,  22,  59, 117,  17,  42,   3,   2,   6,   9,  20,  32,
+#         49, 100, 169, 320,   1]))

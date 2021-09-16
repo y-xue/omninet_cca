@@ -27,7 +27,7 @@ import numpy as np
 
 def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
-    batch_size = images.shape[0]
+    batch_size = videos.shape[0]
     omninet.reset(batch_size)
     # Encode and store images
     omninet.encode_videos(videos,domain='IMAGE')
@@ -35,8 +35,8 @@ def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_s
     omninet.encode_englishtexts(questions)
     omninet.encode_englishtexts(answers)
 
-    if structured is not None or structured_one_hot is not None:
-        omninet.encode_structured(structured_one_hot, structured=structured)
+    # if structured is not None or structured_one_hot is not None:
+    #     omninet.encode_structured(structured_one_hot, structured=structured)
 
     attns = omninet.cross_cache_attention()
 
