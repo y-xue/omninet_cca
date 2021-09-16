@@ -74,6 +74,7 @@ parser.add_argument('--model_save_path', default='/out/test', help='path to save
 # parser.add_argument('--save_best', action='store_true', help='True if only save the model on validation.')
 #parser.add_argument('--cca_caches', default=['spatial', 'temporal', 'structured'], help='caches ')
 parser.add_argument('--no_temporal_encoder', action='store_true', help='True if no temporal encoder.')
+parser.add_argument('--not_sa_on_whole_cache', action='store_true', help='True if apply self attention on samples instead of whole cache.')
 parser.add_argument('--dropout_p', default=0.1, type=float, help='dropout rate for cca stream on spatial cache')
 parser.add_argument('--dropout_t', default=0.1, type=float, help='dropout rate for cca stream on temporal cache')
 parser.add_argument('--dropout_s', default=0.1, type=float, help='dropout rate for cca stream on structured cache')
@@ -132,6 +133,7 @@ data_path = args.data_path
 coco_images = os.path.join(data_path, 'coco/train_val')
 caption_dir = os.path.join(data_path, 'coco')
 vqa_dir = os.path.join(data_path, 'vqa')
+socialiq_dir = os.path.join(data_path, 'socialiq')
 
 structured_path = None
 num_cat_dict = {}
@@ -207,6 +209,7 @@ def set_config(config, conf_type='default'):
         config[0]['patch_pos'] = args.patch_pos
         config[0]['patch_emb_pos'] = not args.no_patch_emb_pos
         config[0]['max_clip_len'] = args.max_clip_len
+        config[0]['sa_on_whole_cache'] = not args.not_sa_on_whole_cache
     if 'struct' in conf_type:
         config[1]['entity_pretrained_emb_path'] = args.entity_pretrained_emb_path
         config[1]['se_dropout'] = args.se_dropout
@@ -306,6 +309,14 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,init_lr=args.init_lr)
+    elif task == 'socialiq':
+        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=args.socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        optimizer = ScheduledOptim(
+            Adam(
+                filter(lambda x: x.requires_grad, shared_model.parameters()),
+                betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
+            512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr)
+
     elif task == 'vqa':
         vqa_val_ques=os.path.join(vqa_dir,'v2_OpenEnded_mscoco_val2014_questions.json')
         vqa_val_ann=os.path.join(vqa_dir,'v2_mscoco_val2014_annotations.json')
@@ -467,6 +478,65 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, Caption Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
             
+        elif task == 'socialiq':
+            if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):
+                if i == (start+1) and not eval_first:
+                    continue
+                model = model.eval()
+                val_loss = 0
+                val_acc=0
+                log_str += '-'*100 + '\nEvaluation step\n'
+                for b in tqdm(val_dl):
+                    imgs = b['videos']
+                    labels = b['labels']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        labels = labels.cuda(device=gpu_id)
+                    questions = b['ques']
+                    answers = b['ans']
+
+                    pred, loss, acc, _ = r.socialiq(model, imgs, questions, answers, targets=labels,mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_acc += acc
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, SIQ validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc)
+                log_str += '-'*100 + '\n'
+
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    best_iteration = step-1
+                    log_str += 'best_iteration:{}\n'.format(best_iteration)
+
+                    shared_model.save(args.model_save_path, 'best/0')
+                    optimizer.save(args.model_save_path, 'best/0')
+
+                    with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
+                        pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+                model = model.train()
+                continue
+            batch = next(DL)
+            imgs = batch['videos']
+            labels = batch['labels']
+            if gpu_id >= 0:
+                imgs = imgs.cuda(device=gpu_id)
+                labels = labels.cuda(device=gpu_id)
+            questions = batch['ques']
+            answers = batch['ans']
+            _, loss,acc,_ = r.socialiq(model, imgs, questions, answers, targets=labels, greedy_only=args.greedy_only)
+            loss.backward()
+            loss=loss.detach()
+            if log:
+                summary_writer.add_scalar('Loss', loss, step)
+            log_str += 'Step %d, SIQ Loss: %f, Accuracy:  %f %%\n' % (step, loss,acc)
+            
+
         elif task == 'vqa':
             if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):
                 if i == (start+1) and not eval_first:

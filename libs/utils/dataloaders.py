@@ -44,7 +44,10 @@ from .cocoapi.coco import COCO
 
 from .vqa.vqa import VQA
 
-
+try:
+    from mmsdk import mmdatasdk
+except:
+    pass
 
 class VideoDataset(Dataset):
     r"""A Dataset for a folder of videos. Expects the directory structure to be
@@ -618,6 +621,221 @@ def penn_dataloader(data_dir, batch_size=1, test_batch_size=1,num_workers=8,voca
         train_dl=iter(cycle(train_dl))
         return train_dl,val_dl,test_dl
     
+
+class social_iq_dataset(Dataset):
+    def __init__(self, data_dir, video_folder, split_dict, split='train', clip_len=30, h=300, w=300):
+        self.clip_len = clip_len
+        self.split = split
+        self.resize_height = h
+        self.resize_width = w
+        self.crop_size = 224
+        
+        # Obtain all the filenames of files inside all the class folders
+        # Going through each class folder one at a time
+        self.fnames = []
+        self.ques = []
+        self.ans = []
+        self.labels = []
+
+        with open(os.path.join(data_dir,'qa.dict.pkl'), 'rb') as f:
+            qa = pickle.load(f)
+
+        for d in qa.values():
+            if d['video_name'] == 'deKPBy_uLkg_trimmed-out' or (
+                split != 'test' and split_dict[d['video_name']] != split):
+                # deKPBy_uLkg_trimmed-out is too short
+                continue
+
+            self.fnames.append(os.path.join(data_dir, video_folder, d['video_name']))
+            self.ques.append(d['question'])
+            self.ans.append(d['answer'])
+            self.labels.append(d['label'])
+
+    def __len__(self):
+        return len(self.fnames)
+
+    def __getitem__(self, index):
+        buffer = self.load_frames(self.fnames[index])
+        buffer = self.crop(buffer, self.clip_len, self.crop_size)
+        if self.split == 'train':
+            # Perform data augmentation
+            buffer = self.randomflip(buffer)
+        buffer = self.normalize(buffer)
+        buffer = self.to_tensor(buffer)
+        return {'video': torch.from_numpy(buffer), 'ques': self.ques[index], 
+                'ans': self.ans[index], 'label': self.labels[index]}
+        # return torch.from_numpy(buffer), torch.from_numpy(labels).unsqueeze(0)
+
+    def randomflip(self, buffer):
+        """Horizontally flip the given image and ground truth randomly with a probability of 0.5."""
+
+        if np.random.random() < 0.5:
+            for i, frame in enumerate(buffer):
+                frame = cv2.flip(buffer[i], flipCode=1)
+                buffer[i] = cv2.flip(frame, flipCode=1)
+
+        return buffer
+
+    def normalize(self, buffer):
+        buffer=buffer/255
+        for i, frame in enumerate(buffer):
+            frame -= np.array([[[0.485, 0.456, 0.406]]])
+            frame /= np.array([[[0.229, 0.224, 0.225]]])
+            buffer[i] = frame
+
+        return buffer
+    
+    def to_tensor(self, buffer):
+        return buffer.transpose((0, 3, 1, 2))
+    
+    def crop(self, buffer, clip_len, crop_size):
+        # randomly select time index for temporal jittering
+        if buffer.shape[0] - clip_len>0 and self.split=='train':
+            time_index = np.random.randint(buffer.shape[0] - clip_len)
+        else:
+            time_index=0
+        # Randomly select start indices in order to crop the video
+        if self.split=='train':
+            height_index = np.random.randint(buffer.shape[1] - crop_size)
+            width_index = np.random.randint(buffer.shape[2] - crop_size)
+        else:
+            height_index=0
+            width_index=0
+
+        # Crop and jitter the video using indexing. The spatial crop is performed on
+        # the entire array, so each frame is cropped in the same location. The temporal
+        # jitter takes place via the selection of consecutive frames
+        buffer = buffer[time_index:time_index + clip_len,
+                 height_index:height_index + crop_size,
+                 width_index:width_index + crop_size, :]
+
+        return buffer
+
+    def load_frames(self, file_dir):
+        frames = sorted([os.path.join(file_dir, img) for img in os.listdir(file_dir)])
+        frame_count = len(frames)
+        buffer = np.empty((frame_count, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+        for i, frame_name in enumerate(frames):
+            frame = np.array(cv2.imread(frame_name)).astype(np.float64)
+            buffer[i] = frame
+
+        return buffer
+
+    # def __init__(self, keys, data, structured_data=None):
+    #     self.keys = keys
+    #     self.data = data
+    #     self.structured_data = structured_data
+    #     self.N=len(self.data)
+
+    # def __len__(self):
+    #     return self.N
+
+    # def __getitem__(self, idx):
+    #     keys = self.keys[idx]
+    #     q,a,i=[d[keys[0]:keys[1]] for d in self.data[0]]
+    #     vis=self.data[1][:,keys[0]:keys[1],:]
+    #     trs=self.data[2][:,keys[0]:keys[1],:]
+    #     acc=self.data[3][:,keys[0]:keys[1],:]
+
+def social_iq_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, structured_path=None, data_seed=68):
+    random.seed(data_seed)
+    np.random.seed(data_seed)
+    torch.manual_seed(data_seed)
+
+    structured_data = None
+    if structured_path is not None:
+        with open(structured_path, 'rb') as f:
+            structured_data = pickle.load(f)
+
+    with open(os.path.join(data_dir, 'train/split.dict.pkl'), 'rb') as f:
+        split_dict = pickle.load(f)
+
+    dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='train')
+    dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
+    
+    val_dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='val')
+    val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=False)
+    
+    test_dataset = social_iq_dataset(data_dir+'/test', video_folder, split_dict, split='test')
+    test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=False)
+    
+    itr = iter(cycle(dataloader))
+    return itr,val_dataloader, test_dataloader
+    # return itr, test_dataloader
+
+
+def social_iq_collate_fn(data):
+    collate_videos = []
+    collate_ques = []
+    collate_ans=[]
+    collate_labels=[]
+    for d in data:
+        collate_videos.append(d['video'])
+        collate_ques.append(d['ques'])
+        collate_ans.append((d['ans']))
+        collate_labels.append((d['label']))
+        
+    collate_videos = torch.stack(collate_videos, dim=0)
+    collate_labels=torch.tensor(collate_labels).reshape([-1,1])
+    return {
+        'videos': collate_videos,
+        'ques': collate_ques,
+        'ans': collate_ans,
+        'labels': collate_labels
+    }
+
+# def social_iq_batchgen(data_dir, num_workers=1, batch_size=1, structured_path=None, data_seed=68):
+#     structured_data = None
+#         if structured_path is not None:
+#             with open(structured_path, 'rb') as f:
+#                 structured_data = pickle.load(f)
+
+#     # data_dir='/files/yxue/research/allstate/data/socialiq_and_deployed'
+#     paths["QA_BERT_lastlayer_binarychoice"]=data_dir+"/socialiq/SOCIAL-IQ_QA_BERT_LASTLAYER_BINARY_CHOICE.csd"
+#     paths["DENSENET161_1FPS"]=data_dir+"/deployed/SOCIAL_IQ_DENSENET161_1FPS.csd"
+#     paths["Transcript_Raw_Chunks_BERT"]=data_dir+"/deployed/SOCIAL_IQ_TRANSCRIPT_RAW_CHUNKS_BERT.csd"
+#     paths["Acoustic"]=data_dir+"/deployed/SOCIAL_IQ_COVAREP.csd"
+#     social_iq=mmdatasdk.mmdataset(paths)
+#     social_iq.unify()
+
+#     preload=True
+#     trk,dek=mmdatasdk.socialiq.standard_folds.standard_train_fold,mmdatasdk.socialiq.standard_folds.standard_valid_fold
+#     #This video has some issues in training set
+#     bads=['f5NJQiY9AuY','aHBLOkfJSYI']
+#     folds=[trk,dek]
+#     for bad in bads:
+#         for fold in folds:
+#             try:
+#                 fold.remove(bad)
+#             except:
+#                 pass
+
+#     preloaded_train=process_data(trk)
+#     preloaded_dev=process_data(dek)
+#     print("Preloading Complete")
+
+#     dataset = social_iq_dataset(trk, preloaded_train, structured_data=structured_data)
+#     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+#                                  collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
+    
+#     # val_dataset = vqa_dataset(trk[:100], preloaded_dev, structured_data=structured_data)
+#     # val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+#     #                              collate_fn=social_iq_collate_fn, drop_last=False)
+    
+
+#     test_dataset = vqa_dataset(dek, preloaded_dev, structured_data=structured_data)
+#     test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+#                                  collate_fn=social_iq_collate_fn, drop_last=False)
+    
+#     itr = iter(cycle(dataloader))
+#     # return itr,val_dataloader, test_dataset
+#     return itr, test_dataset
+
+
+
 
 
 

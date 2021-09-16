@@ -25,7 +25,39 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
+    # Reset the cnp memory
+    batch_size = images.shape[0]
+    omninet.reset(batch_size)
+    # Encode and store images
+    omninet.encode_videos(videos,domain='IMAGE')
+    # Encode and store questions
+    omninet.encode_englishtexts(questions)
+    omninet.encode_englishtexts(answers)
 
+    if structured is not None or structured_one_hot is not None:
+        omninet.encode_structured(structured_one_hot, structured=structured)
+
+    attns = omninet.cross_cache_attention()
+
+    if mode in ['train','val'] and not greedy_only:
+        predictions, l1_loss_struct = omninet.decode_from_targets('SIQ', targets=targets)
+    elif mode=='predict' or greedy_only:
+        predictions, l1_loss_struct = omninet.decode_greedy('SIQ', num_steps=num_steps)
+    # Calculate loss if targets is provided
+    if targets is not None:
+        loss, acc = calc_nll_loss_and_acc(predictions,targets)
+    else:
+        loss,acc=None, None
+    if return_str_preds:
+        # Return predictions in detokenized string format
+        predictions = predictions.argmax(-1)
+    try:
+        if attns is not None:
+            return predictions, loss, acc, attns
+    except:
+        pass
+    return predictions, loss, acc
 
 def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_steps=1):
     batch_size = videos.shape[0]

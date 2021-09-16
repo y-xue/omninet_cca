@@ -109,7 +109,7 @@ class CNP(nn.Module):
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
                                                 conf['cca_hidden_dim'], conf['cca_n_heads'], conf['sa_n_heads'], conf['psa_n_heads'], conf['cca_d_k'], conf['cca_d_v'], 
                                                 conf['default_attn_blocks'], conf['use_vit_mlp'], 
-                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], drop_path_rate=conf['drop_path_rate'], sa_drop_path_rate=conf['sa_drop_path_rate'], return_attns=conf['save_cca_attn'], patch_pos=conf['patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], gpu_id=self.gpu_id)
+                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], drop_path_rate=conf['drop_path_rate'], sa_drop_path_rate=conf['sa_drop_path_rate'], return_attns=conf['save_cca_attn'], patch_pos=conf['patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'] gpu_id=self.gpu_id)
         self.decoder=Decoder(self.max_seq_len,self.decoder_n_layers,self.decoder_n_heads,self.decoder_d_k,
                              self.decoder_d_v,self.decoder_dim,self.decoder_hidden_dim,self.temporal_dim,
                              self.spatial_dim,self.output_dim, dropout=self.dropout,gpu_id=self.gpu_id)
@@ -542,7 +542,7 @@ class PatchEmbedding(nn.Module):
         return patch_seq
 
 class CrossCacheAttention(nn.Module):
-    def __init__(self, cache_names, n_layers, sa_n_layers, psa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_head, psa_n_head, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout=0.1, drop_path_rate=0., sa_drop_path_rate=0., return_attns=False, patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, gpu_id=-1):
+    def __init__(self, cache_names, n_layers, sa_n_layers, psa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_head, psa_n_head, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout=0.1, drop_path_rate=0., sa_drop_path_rate=0., return_attns=False, patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, sa_on_whole_cache=True, gpu_id=-1):
         super(CrossCacheAttention, self).__init__()
         self.n_layers = n_layers
         self.n_head = n_head
@@ -567,6 +567,7 @@ class CrossCacheAttention(nn.Module):
         self.return_attns = return_attns
         self.cache_names = cache_names
         self.patch_pos = patch_pos
+        self.sa_on_whole_cache = sa_on_whole_cache
         self.gpu_id = gpu_id
 
         self.cache_symbols = []
@@ -749,6 +750,7 @@ class CrossCacheAttention(nn.Module):
 
     def forward(self, spatial_cache, temporal_cache, structured_cache, pad_cache, temporal_spatial_link):
         n_spatial = sum([t for t,s in temporal_spatial_link if s > 1])
+        temporal_lst = [t for t,s in temporal_spatial_link if s == 1]
         real_pad_cache = pad_cache[:,n_spatial:]
         real_temporal_cache = temporal_cache[:,n_spatial:]
         # print('cca_p_with_t')
@@ -800,7 +802,16 @@ class CrossCacheAttention(nn.Module):
                                                    real_temporal_cache)
  
         if self.sa_t is not None and temporal_cross_cache is not None:
-            temporal_cross_cache = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache)[0]
+            if len(temporal_lst) == 1 or self.sa_on_whole_cache:
+                temporal_cross_cache = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache)[0]
+            else:
+                temporal_cache_lst = []
+                cursor = 0
+                for len_t in temporal_lst:
+                    temporal_cache_lst.append(self.cca_stream(self.sa_t, temporal_cross_cache[cursor:(cursor+len_t)], None, 't', pad_mask_q=real_pad_cache[cursor:(cursor+len_t)], pad_mask_k=real_pad_cache[cursor:(cursor+len_t)])[0])
+                    cursor += len_t
+                temporal_cross_cache = torch.cat(temporal_cache_lst, 1)
+            
 
         temporal_cross_cache = torch.cat([temporal_cache[:,:n_spatial], temporal_cross_cache], 1)
 
