@@ -311,7 +311,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, 16000,restore,init_lr=args.init_lr)
     elif task == 'socialiq':
-        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, clip_len=args.max_clip_len data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
@@ -487,9 +487,11 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 model = model.eval()
                 val_loss = 0
                 val_acc=0
+                n_correct = 0
+                n_total = 0
                 log_str += '-'*100 + '\nEvaluation step\n'
                 print('-'*100 + '\nEvaluation step')
-                for b in tqdm(val_dl):
+                for b in val_dl:
                     imgs = b['videos']
                     labels = b['labels']
                     if gpu_id >= 0:
@@ -501,13 +503,17 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     pred, loss, acc = r.socialiq(model, imgs, questions, answers, targets=labels,mode='val',return_str_preds=True, greedy_only=args.greedy_only)
                     val_loss += float(loss.detach().cpu().numpy())
                     val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
                 summary_writer.add_scalar('Val_loss', val_loss, step)
 
-                log_str += 'Step %d, SIQ validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc)
-                log_str += '-'*100 + '\n'
-                print('Step %d, SIQ validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
+                log_str += 'Step %d, SIQ validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, SIQ validation loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
                 print('-'*100 )
 
                 print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))

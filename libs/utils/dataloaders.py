@@ -737,7 +737,7 @@ class social_iq_dataset(Dataset):
     #     trs=self.data[2][:,keys[0]:keys[1],:]
     #     acc=self.data[3][:,keys[0]:keys[1],:]
 
-def social_iq_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, structured_path=None, data_seed=68):
+def social_iq_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, structured_path=None, clip_len=30, data_seed=68):
     random.seed(data_seed)
     np.random.seed(data_seed)
     torch.manual_seed(data_seed)
@@ -750,17 +750,17 @@ def social_iq_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, stru
     with open(os.path.join(data_dir, 'train/split.dict.pkl'), 'rb') as f:
         split_dict = pickle.load(f)
 
-    dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='train')
+    dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='train', clip_len=clip_len)
     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                                  collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
     
     print('# of training mini-batches:', len(dataloader))
-    val_dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='val')
-    val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+    val_dataset = social_iq_dataset(data_dir+'/train', video_folder, split_dict, split='val', clip_len=clip_len)
+    val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=max(int(batch_size/2),1), shuffle=True,
                                  collate_fn=social_iq_collate_fn, drop_last=False)
     
-    test_dataset = social_iq_dataset(data_dir+'/test', video_folder, split_dict, split='test')
-    test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+    test_dataset = social_iq_dataset(data_dir+'/test', video_folder, split_dict, split='test', clip_len=clip_len)
+    test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=max(int(batch_size/2),1), shuffle=True,
                                  collate_fn=social_iq_collate_fn, drop_last=False)
     
     itr = iter(cycle(dataloader))
