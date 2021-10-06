@@ -63,6 +63,7 @@ parser.add_argument('--eval_interval', help='Interval after which to evaluate on
 parser.add_argument('--eval_start', default=0, type=int, help='Step after which to start evaluating on the test/val set.')
 parser.add_argument('--init_lr', default=0.02, type=float, help='init_lr')
 parser.add_argument('--init_lr_cca', default=0.02, type=float, help='init_lr_cca')
+parser.add_argument('--n_warmup_steps', default=16000, type=int, help='warmup steps')
 parser.add_argument('--weight_decay', default=0, type=float, help='weight decay')
 parser.add_argument('--weight_decay_cca', default=0, type=float, help='weight decay for cca optimizer')
 parser.add_argument('--weight_seed', default=1029, type=int, help='seed for model weight initialization.')
@@ -309,14 +310,14 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
-            512, 16000,restore,init_lr=args.init_lr)
+            512, args.n_warmup_steps,restore,init_lr=args.init_lr)
     elif task == 'socialiq':
         DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, clip_len=args.max_clip_len, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
-            512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr)
+            512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr)
 
     elif task == 'vqa':
         vqa_val_ques=os.path.join(vqa_dir,'v2_OpenEnded_mscoco_val2014_questions.json')
@@ -335,13 +336,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 Adam(
                     filter(lambda x: x.requires_grad, shared_model.parameters()),
                     betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
-                512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr,name='optimizer')
+                512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr,name='optimizer')
         elif args.optim == 'adamw':
             omni_optimizer = ScheduledOptim(
                 AdamW(
                     filter(lambda x: x.requires_grad, shared_model.parameters()),
                     betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
-                512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr,name='optimizer')
+                512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr,name='optimizer')
         optimizer = omni_optimizer
         if os.path.exists(os.path.join(args.model_save_path,str(restore),'optimizer.pth')):
             optimizer.restore(args.model_save_path, restore)
@@ -352,7 +353,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 Adam(
                     filter(lambda x: x.requires_grad, shared_model.parameters()),
                     betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay_cca),
-                512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr_cca,name='cca_optimizer')
+                512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr_cca,name='cca_optimizer')
             if os.path.exists(os.path.join(args.model_save_path,str(restore),'cca_optimizer.pth')):
                 cca_optimizer.restore(args.model_save_path, restore)
             if os.path.exists(os.path.join(args.model_save_path,str(restore),'omni_on.pkl')):
@@ -369,7 +370,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
-            512, 16000,restore,max_lr=0.0001,init_lr=args.init_lr)
+            512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr)
     elif task == 'penn':
         DL,val_dl,test_dl=dl.penn_dataloader(penn_data_dir,batch_size=batch_size,
                                              test_batch_size=int(batch_size/2),num_workers=args.n_workers,vocab_file='conf/penn_vocab.json')
@@ -377,7 +378,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
-            512, 16000,restore,init_lr=args.init_lr)
+            512, args.n_warmup_steps,restore,init_lr=args.init_lr)
     
     if task != 'vqa' and os.path.exists(os.path.join(args.model_save_path,str(restore),'optimizer.pth')):
         optimizer.restore(args.model_save_path, restore)
