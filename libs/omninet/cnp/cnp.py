@@ -230,7 +230,7 @@ class CNP(nn.Module):
 
         
 
-    def encode(self,input,pad_mask=None,domain='EMPTY',recurrent_steps=1):
+    def encode(self,input,pad_mask=None,domain='EMPTY',recurrent_steps=1,sa=False):
         if (len(input.shape)!=4):
             raise Exception('Invalid input dimensions.')
         b,t,s,f=list(input.size())
@@ -262,7 +262,7 @@ class CNP(nn.Module):
             temp_data=self.proj_dropout(temp_data)
         #Create a control state and concat with the temporal data
         #Add data to temporal cache
-        if self.use_temporal_encoder:
+        if self.use_temporal_encoder or sa:
             temp_data,=self.temporal_encoder(temp_data,pad_mask=pad_mask,recurrent_steps=recurrent_steps)
        
         if self.temporal_cache is None:

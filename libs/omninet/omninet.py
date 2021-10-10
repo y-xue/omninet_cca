@@ -78,9 +78,9 @@ class OmniNet(nn.Module):
         image_encodings = self.cnp.encode_with_patch(image_encodings,(h,w))
         self.cnp.encode(image_encodings,domain=domain)
     
-    def encode_englishtexts(self,texts,domain='ENGLISH'):
+    def encode_englishtexts(self,texts,domain='ENGLISH',sa=False):
         sent_encodings,input_pad_mask=self.english_language_perph.embed_sentences(texts)
-        self.cnp.encode(sent_encodings, pad_mask=input_pad_mask, domain=domain)
+        self.cnp.encode(sent_encodings, pad_mask=input_pad_mask, domain=domain, sa=sa)
     
     def encode_structured(self, structured_one_hot, structured=None, domain='STRUCT'):
         if structured_one_hot is not None:

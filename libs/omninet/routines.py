@@ -33,12 +33,12 @@ def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_s
     omninet.encode_videos(videos,domain='IMAGE')
     # Encode and store questions
     omninet.encode_englishtexts(questions)
-    omninet.encode_englishtexts(answers)
-
     # if structured is not None or structured_one_hot is not None:
     #     omninet.encode_structured(structured_one_hot, structured=structured)
 
     attns = omninet.cross_cache_attention()
+
+    omninet.encode_englishtexts(answers, sa=True)
 
     if mode in ['train','val'] and not greedy_only:
         predictions, l1_loss_struct = omninet.decode_from_targets('SIQ', targets=targets)
