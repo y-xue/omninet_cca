@@ -28,7 +28,7 @@ import glob
 import numpy as np
 import libs.omninet as omninet
 from libs.utils import dataloaders as dl
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
@@ -267,8 +267,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    if (log == True):
-        summary_writer = SummaryWriter(log_dir)
+    # if (log == True):
+    #     summary_writer = SummaryWriter(log_dir)
     # Create local model
      
     # torch.manual_seed(int(random.random() * 1000))
@@ -463,7 +463,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     val_acc+=acc
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
-                summary_writer.add_scalar('Val_loss', val_loss, step)
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
                 print('Step %d, COCO validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
                 print('-' * 100)
                 model = model.train()
@@ -476,8 +476,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             _, loss,acc = r.image_caption(model, imgs, targets=captions)
             loss.backward()
             loss=loss.detach()
-            if log:
-                summary_writer.add_scalar('Loss', loss, step)
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, Caption Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
             
         elif task == 'socialiq':
@@ -510,7 +510,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
                 val_acc1=n_correct/n_total
-                summary_writer.add_scalar('Val_loss', val_loss, step)
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
 
                 log_str += 'Step %d, SIQ validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
                 log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
@@ -547,8 +547,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             _, loss,acc = r.socialiq(model, imgs, questions, answers, targets=labels, greedy_only=args.greedy_only)
             loss.backward()
             loss=loss.detach()
-            if log:
-                summary_writer.add_scalar('Loss', loss, step)
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
             log_str += 'Step %d, SIQ Loss: %f, Accuracy:  %f %%\n' % (step, loss,acc)
             print('Step %d, SIQ Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
 
@@ -626,7 +626,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     predictions += pred.detach().cpu().squeeze().tolist()
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
-                summary_writer.add_scalar('Val_loss', val_loss, step)
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
 
                 non_ma_predictions = []
                 non_ma_ans = []
@@ -811,8 +811,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             # log_str += 'forward/backward pass takes {:.8f}s\n'.format(end_time - start_time)
             # print('forward/backward pass takes {:.8f}s'.format(end_time - start_time))
             loss=loss.detach()
-            if log:
-                summary_writer.add_scalar('Loss', loss, step)
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
             if args.l1reg is None:
                 # print('Step %d, VQA Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
                 log_str += 'Step %d, VQA Loss: %f, Accuracy:  %f %%\n' % (step, loss,acc)
@@ -836,7 +836,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     val_acc+=acc
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
-                summary_writer.add_scalar('Val_loss', val_loss, step)
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
                 print('Step %d, HMDB validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
                 print('-' * 100)
                 model = model.train()
@@ -848,8 +848,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             _, loss,acc = r.hmdb(model, vid,targets=labels,return_str_preds=True)
             loss.backward()
             loss=loss.detach()
-            if log:
-                summary_writer.add_scalar('Loss', loss, step)
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, HMDB Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
             
         elif task == 'penn':
@@ -874,7 +874,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     val_acc+=acc
                 val_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
-                summary_writer.add_scalar('Val_loss', val_loss, step)
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
                 print('Step %d, PENN validation loss: %f, Accuracy %f %%' % (step, val_loss,val_acc))
                 print('-' * 100)
                 model = model.train()
@@ -889,8 +889,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             _, loss,acc = r.penn(model, en, pad_id=pad_id, targets=targets,target_pad_mask=pad_mask)
             loss.backward()
             loss=loss.detach()
-            if log:
-                summary_writer.add_scalar('Loss', loss, step)
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, PENN Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
             
         # End Calculate loss
