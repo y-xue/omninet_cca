@@ -262,8 +262,10 @@ class CNP(nn.Module):
             temp_data=self.proj_dropout(temp_data)
         #Create a control state and concat with the temporal data
         #Add data to temporal cache
-        if self.use_temporal_encoder or sa:
+        if self.use_temporal_encoder:
             temp_data,=self.temporal_encoder(temp_data,pad_mask=pad_mask,recurrent_steps=recurrent_steps)
+        elif sa:
+            temp_data = self.cca.cca_stream(self.cca.sa_t, temp_data, None, 't', pad_mask_q=pad_mask, pad_mask_k=pad_mask)[0]
        
         if self.temporal_cache is None:
             self.temporal_cache=temp_data
