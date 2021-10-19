@@ -519,8 +519,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
                 print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
 
-                if val_acc > best_val_acc:
-                    best_val_acc = val_acc
+                if val_acc1 > best_val_acc:
+                    best_val_acc = val_acc1
                     best_iteration = step-1
                     log_str += 'best_iteration:{}\n'.format(best_iteration)
                     print('best_iteration:{}'.format(best_iteration))
@@ -530,6 +530,44 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
                     with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
                         pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+                # evaluate on test
+                start_time = time.time()
+                val_loss = 0
+                val_acc=0
+                n_correct = 0
+                n_total = 0
+                log_str += '-'*100 + '\nTest step\n'
+                print('-'*100 + '\nTest step')
+                for b in test_dl:
+                    imgs = b['videos']
+                    labels = b['labels']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        labels = labels.cuda(device=gpu_id)
+                    questions = b['ques']
+                    answers = b['ans']
+
+                    pred, loss, acc = r.socialiq(model, imgs, questions, answers, targets=labels,mode='predict',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, SIQ test loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Test takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, SIQ test loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('-'*100 )
+
+                print('Test takes: {:.8f}s'.format(time.time() - start_time))
 
                 print_log(log_str, args.model_save_path+'.log')
                 log_str = ''
