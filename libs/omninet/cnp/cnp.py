@@ -109,7 +109,7 @@ class CNP(nn.Module):
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
                                                 conf['cca_hidden_dim'], conf['cca_n_heads'], conf['sa_n_heads'], conf['psa_n_heads'], conf['cca_d_k'], conf['cca_d_v'], 
                                                 conf['default_attn_blocks'], conf['use_vit_mlp'], 
-                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], drop_path_rate=conf['drop_path_rate'], sa_drop_path_rate=conf['sa_drop_path_rate'], return_attns=conf['save_cca_attn'], patch_pos=conf['patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'], gpu_id=self.gpu_id)
+                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], dropout_patch_emb=conf['dropout_patch_emb'], drop_path_rate=conf['drop_path_rate'], sa_drop_path_rate=conf['sa_drop_path_rate'], return_attns=conf['save_cca_attn'], patch_pos=conf['patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'], gpu_id=self.gpu_id)
         self.decoder=Decoder(self.max_seq_len,self.decoder_n_layers,self.decoder_n_heads,self.decoder_d_k,
                              self.decoder_d_v,self.decoder_dim,self.decoder_hidden_dim,self.temporal_dim,
                              self.spatial_dim,self.output_dim, dropout=self.dropout,gpu_id=self.gpu_id)
@@ -544,7 +544,7 @@ class PatchEmbedding(nn.Module):
         return patch_seq
 
 class CrossCacheAttention(nn.Module):
-    def __init__(self, cache_names, n_layers, sa_n_layers, psa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_head, psa_n_head, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout=0.1, drop_path_rate=0., sa_drop_path_rate=0., return_attns=False, patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, sa_on_whole_cache=True, gpu_id=-1):
+    def __init__(self, cache_names, n_layers, sa_n_layers, psa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_head, psa_n_head, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout_patch_emb=0.1, dropout=0.1, drop_path_rate=0., sa_drop_path_rate=0., return_attns=False, patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, sa_on_whole_cache=True, gpu_id=-1):
         super(CrossCacheAttention, self).__init__()
         self.n_layers = n_layers
         self.n_head = n_head
@@ -563,6 +563,7 @@ class CrossCacheAttention(nn.Module):
         self.dropout_p = dropout_p
         self.dropout_s = dropout_s
         self.dropout_t = dropout_t
+        self.dropout_patch_emb = dropout_patch_emb
         self.drop_path_rate = drop_path_rate
         self.sa_drop_path_rate = sa_drop_path_rate
         # self.more_dropout = more_dropout
@@ -617,7 +618,7 @@ class CrossCacheAttention(nn.Module):
                 get_sinusoid_encoding_table((max_patches_h*max_patches_w+1), d_p, padding_idx=0),
                 freeze=True)
         else:
-            self.position_enc_p = PatchEmbedding(d_p, (1,1), max_clip_len, max_patches_h, max_patches_w, d_p, pos_emb=conf['patch_emb_pos'], dropout=conf['dropout_patch_emb'], gpu_id=gpu_id)
+            self.position_enc_p = PatchEmbedding(d_p, (1,1), max_clip_len, max_patches_h, max_patches_w, d_p, dropout=self.dropout_patch_emb, gpu_id=gpu_id)
 
     def get_network(self, cca_type='t'):
         if cca_type not in self.streams:
