@@ -103,7 +103,7 @@ class CNP(nn.Module):
                                                      gpu_id=self.gpu_id)
         if self.use_patch:
             # TODO: add necessary configs
-            self.patch_embedding = PatchEmbedding(self.input_dim, conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim, stride=conf['patch_stride'], pos_emb=conf['patch_emb_pos'], dropout=self.dropout, gpu_id=self.gpu_id)
+            self.patch_embedding = PatchEmbedding(self.input_dim, conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim, stride=conf['patch_stride'], pos_emb=conf['patch_emb_pos'], dropout=conf['dropout_patch_emb'], gpu_id=self.gpu_id)
         if self.use_cca:
             self.cca = CrossCacheAttention(conf['cca_caches'], conf['cca_n_layers'], conf['sa_n_layers'], conf['psa_n_layers'],
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
@@ -617,7 +617,7 @@ class CrossCacheAttention(nn.Module):
                 get_sinusoid_encoding_table((max_patches_h*max_patches_w+1), d_p, padding_idx=0),
                 freeze=True)
         else:
-            self.position_enc_p = PatchEmbedding(d_p, (1,1), max_clip_len, max_patches_h, max_patches_w, d_p, pos_emb=conf['patch_emb_pos'], dropout=dropout, gpu_id=gpu_id)
+            self.position_enc_p = PatchEmbedding(d_p, (1,1), max_clip_len, max_patches_h, max_patches_w, d_p, pos_emb=conf['patch_emb_pos'], dropout=conf['dropout_patch_emb'], gpu_id=gpu_id)
 
     def get_network(self, cca_type='t'):
         if cca_type not in self.streams:
@@ -672,7 +672,7 @@ class CrossCacheAttention(nn.Module):
                                        dropout=attn_dropout,
                                        drop_path_rate=dpr)
 
-    def cca_pos_emb(self, cache, cache_symbol, stream_name, position_enc, dropout_emb, temporal_spatial_link=[(1,49),(-1,1)]):
+    def cca_pos_emb(self, cache, cache_symbol, stream_name, position_enc, temporal_spatial_link=[(1,49),(-1,1)]):
         k = '%s-%s'%(stream_name,cache_symbol)
         if k not in self.pos_emb_streams:
             # print('cca_pos_emb stream name not found', cache_symbol, stream_name, k)
@@ -706,7 +706,7 @@ class CrossCacheAttention(nn.Module):
                 src_pos = torch.arange(1, t + 1).repeat(b, 1)
             cache = cache + position_enc(src_pos)
         
-        # cache = dropout_emb(cache)
+        cache = self.dropout_emb(cache)
         return cache
 
     def cca_stream(self, net, cache_alpha, cache_beta, stream_name, pad_mask_q=None, pad_mask_k=None):
@@ -727,12 +727,12 @@ class CrossCacheAttention(nn.Module):
         else:
             raise Exception('unknown cache_symbol for position encoding.')
 
-        cache_alpha = self.cca_pos_emb(cache_alpha, stream_name[0], stream_name, position_enc, self.dropout_emb)
+        cache_alpha = self.cca_pos_emb(cache_alpha, stream_name[0], stream_name, position_enc)
 
         if cache_beta is None:
             return net(cache_alpha, non_pad_mask, attn_mask=attn_mask)
 
-        cache_beta = self.cca_pos_emb(cache_beta, stream_name[1], stream_name, position_enc, self.dropout_emb)
+        cache_beta = self.cca_pos_emb(cache_beta, stream_name[1], stream_name, position_enc)
         return net(cache_alpha, non_pad_mask, enc_input_k=cache_beta, enc_input_v=cache_beta, attn_mask=attn_mask)
 
     def combine_stream(self, stream_proj, stream_out1, stream_out2, target_cache):

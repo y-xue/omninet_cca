@@ -79,6 +79,7 @@ parser.add_argument('--not_sa_on_whole_cache', action='store_true', help='True i
 parser.add_argument('--dropout_p', default=0.1, type=float, help='dropout rate for cca stream on spatial cache')
 parser.add_argument('--dropout_t', default=0.1, type=float, help='dropout rate for cca stream on temporal cache')
 parser.add_argument('--dropout_s', default=0.1, type=float, help='dropout rate for cca stream on structured cache')
+parser.add_argument('--dropout_patch_emb', default=0.1, type=float, help='dropout rate for patch embeddings')
 parser.add_argument('--drop_path_rate', default=0., type=float, help='drop_path rate')
 parser.add_argument('--sa_drop_path_rate', default=0., type=float, help='drop_path rate in self attention in encoder')
 parser.add_argument('--more_dropout', action='store_true', help='true if apply more dropouts than vanilla Omninet')
@@ -193,6 +194,7 @@ def set_config(config, conf_type='default'):
         config[0]['dropout_p'] = args.dropout_p
         config[0]['dropout_s'] = args.dropout_s
         config[0]['dropout_t'] = args.dropout_t
+        config[0]['dropout_patch_emb'] = args.dropout_patch_emb
         config[0]['drop_path_rate'] = args.drop_path_rate
         config[0]['sa_drop_path_rate'] = args.sa_drop_path_rate
         config[0]['cca_n_layers'] = args.cca_n_layers

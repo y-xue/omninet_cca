@@ -87,6 +87,7 @@ def cca_config():
     cnp_conf['dropout_s'] = 0.1
     cnp_conf['dropout_t'] = 0.1
     cnp_conf['drop_path_rate'] = 0.
+    cnp_conf['dropout_patch_emb'] = 0.1
     cnp_conf['structured_dim'] = 512
 
     perph_conf['image_feature_dim'] = 1024
