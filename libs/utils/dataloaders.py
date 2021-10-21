@@ -646,7 +646,11 @@ class social_iq_dataset(Dataset):
                 # deKPBy_uLkg_trimmed-out is too short
                 continue
 
-            self.fnames.append(os.path.join(data_dir, video_folder, d['video_name']))
+            vname = d['video_name']
+            if split == 'test':
+                vname = vname[:-4] + '_trimmed'
+
+            self.fnames.append(os.path.join(data_dir, video_folder, vname))
             self.ques.append(d['question'])
             self.ans.append(d['answer'])
             self.labels.append(d['label'])
