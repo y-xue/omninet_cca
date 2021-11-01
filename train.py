@@ -136,6 +136,7 @@ data_path = args.data_path
 coco_images = os.path.join(data_path, 'coco/train_val')
 caption_dir = os.path.join(data_path, 'coco')
 vqa_dir = os.path.join(data_path, 'vqa')
+vg_dir = os.path.join(data_path, 'visual_genome')
 socialiq_dir = os.path.join(data_path, 'socialiq')
 socialiq_video_folder = 'vision/videos_1fps_640-360_resized'
 

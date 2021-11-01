@@ -7,6 +7,7 @@ data_dir = '/files/yxue/research/allstate/data/visual_genome'
 
 def remove_preps(qa):
     for i in range(len(qa)):
+        single_worded_answer_qas = []
         for j in range(len(qa[i]['qas'])):
             ans = qa[i]['qas'][j]['answer']
             words = ans.split(' ')
@@ -17,9 +18,16 @@ def remove_preps(qa):
                         modified_ans = ' '.join(words[2:])
                 elif words[0] in ['A', 'The', 'On', 'In', 'At', 'Light', 'To', 'It\'s']:
                     modified_ans = ' '.join(words[1:])
-            if modified_ans[-1] == '.':
-                modified_ans = modified_ans[:-1]
-            qa[i]['qas'][j]['answer'] = modified_ans
+                else:
+                    modified_ans = qa[i]['qas'][j]['answer']
+                
+                if modified_ans[-1] == '.':
+                    modified_ans = modified_ans[:-1]
+                qa[i]['qas'][j]['answer'] = modified_ans
+
+                single_worded_answer_qas.append(qa[i]['qas'][j])
+        qa[i]['qas'] = single_worded_answer_qas
+            
     with open(data_dir+'/question_answers_extracted.json','w') as f:
         json.dump(qa, f)
     
