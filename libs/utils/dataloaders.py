@@ -851,7 +851,7 @@ class vg_dataset(Dataset):
         self.ans = []
         self.ans_str = []
         with open(vocab_file,'rb') as f:
-            ans_to_id,id_to_ans=pickle.loads(f)
+            ans_to_id,id_to_ans=pickle.load(f)
         # load the questions
         for x in tqdm.tqdm(qas,'Loading VG data to memory'):
             # get the path
@@ -908,6 +908,8 @@ def vg_batchgen(vg_dir, num_workers=1, batch_size=1, data_seed=68):
         # the data loader
         dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                                      collate_fn= vg_collate_fn, drop_last=True,pin_memory=True)
+        print('# of training mini-batches:', len(dataloader))
+
         val_tfms = transforms.Compose([
             transforms.Resize(int(224 * 1.14)),
             transforms.CenterCrop(224),

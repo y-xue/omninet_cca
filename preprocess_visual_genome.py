@@ -14,9 +14,12 @@ def remove_preps(qa):
                 if len(words) > 2 and ' '.join(words[:2]) in ['On the', 'In the', 'At the', 'To the', 
                                                'On a',   'In a',   'At a',   'To a',
                                                'During the', 'It is']:
-                        qa[i]['qas'][j]['answer'] = ' '.join(words[2:])
+                        modified_ans = ' '.join(words[2:])
                 elif words[0] in ['A', 'The', 'On', 'In', 'At', 'Light', 'To', 'It\'s']:
-                    qa[i]['qas'][j]['answer'] = ' '.join(words[1:])
+                    modified_ans = ' '.join(words[1:])
+            if modified_ans[-1] == '.':
+                modified_ans = modified_ans[:-1]
+            qa[i]['qas'][j]['answer'] = modified_ans
     with open(data_dir+'/question_answers_extracted.json','w') as f:
         json.dump(qa, f)
     
@@ -37,8 +40,6 @@ def build_vocab(qa):
     idx = 0
     for ans in dict(sorted(ans_count.items(), key=lambda item: item[1],reverse=True)):
         if len(ans.split(' ')) == 1:
-            if ans[-1] == '.':
-                ans = ans[:-1]
             ans_to_id[ans] = idx
             id_to_ans[idx] = ans
             idx += 1

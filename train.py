@@ -315,7 +315,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, args.n_warmup_steps,restore,init_lr=args.init_lr)
     elif task == 'vg':
-        DL, val_dl, test_dl = vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
