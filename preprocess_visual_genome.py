@@ -17,7 +17,7 @@ def remove_preps(qa):
                         qa[i]['qas'][j]['answer'] = ' '.join(words[2:])
                 elif words[0] in ['A', 'The', 'On', 'In', 'At', 'Light', 'To', 'It\'s']:
                     qa[i]['qas'][j]['answer'] = ' '.join(words[1:])
-    with open(data_dir+'question_answers_extracted.json','w') as f:
+    with open(data_dir+'/question_answers_extracted.json','w') as f:
         json.dump(qa, f)
     
 
@@ -40,7 +40,7 @@ def build_vocab(qa):
             if ans[-1] == '.':
                 ans = ans[:-1]
             ans_to_id[ans] = idx
-            id_to_ans[ids] = ans
+            id_to_ans[idx] = ans
             idx += 1
 
     with open('conf/vg_vocab.pkl', 'wb') as f:
@@ -65,13 +65,13 @@ def split_qa(qa, val_ids, test_ids):
     for i in range(len(qa)):
         if len(qa[i]['qas']) == 0:
             continue
-        image_id = qa[i]['qas']['image_id']
+        image_id = qa[i]['qas'][0]['image_id']
         if image_id in val_ids:
-            val_qa.append(qa[i])
+            val_qa.append(qa[i]['qas'])
         elif image_id in test_ids:
-            test_qa.append(qa[i])
+            test_qa.append(qa[i]['qas'])
         else:
-            train_qa.append(qa[i])
+            train_qa.append(qa[i]['qas'])
 
     with open(data_dir+'/train_qa.json','w') as f:
         json.dump(train_qa, f)

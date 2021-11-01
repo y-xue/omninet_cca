@@ -314,6 +314,14 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
             512, args.n_warmup_steps,restore,init_lr=args.init_lr)
+    elif task == 'vg':
+        DL, val_dl, test_dl = vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        optimizer = ScheduledOptim(
+            Adam(
+                filter(lambda x: x.requires_grad, shared_model.parameters()),
+                betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
+            512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr)
+
     elif task == 'socialiq':
         DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, clip_len=args.max_clip_len, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(

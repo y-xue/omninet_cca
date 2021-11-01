@@ -885,7 +885,7 @@ class vg_dataset(Dataset):
         return {'img': img, 'ques': ques, 'ans': ans, 'ques_id': ques_id, 'ans_str': ans_str}
 
 
-def vqa_batchgen(vg_dir, image_dir, num_workers=1, batch_size=1, data_seed=68):
+def vg_batchgen(vg_dir, num_workers=1, batch_size=1, data_seed=68):
         random.seed(data_seed)
         np.random.seed(data_seed)
         torch.manual_seed(data_seed)
@@ -904,25 +904,25 @@ def vqa_batchgen(vg_dir, image_dir, num_workers=1, batch_size=1, data_seed=68):
             normalize,
         ])
         # the dataset
-        dataset = vqa_dataset(vg_train_qa, image_dir+'/VG_100K', vocab_file, transforms=transformer)
+        dataset = vg_dataset(vg_train_qa, vg_dir+'/VG_100K', vocab_file, transforms=transformer)
         # the data loader
         dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
-                                     collate_fn= vqa_collate_fn, drop_last=True,pin_memory=True)
+                                     collate_fn= vg_collate_fn, drop_last=True,pin_memory=True)
         val_tfms = transforms.Compose([
             transforms.Resize(int(224 * 1.14)),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
         ])
-        val_dataset = vqa_dataset(vg_val_qa, image_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
+        val_dataset = vg_dataset(vg_val_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
         val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
-                                     collate_fn=vqa_collate_fn, drop_last=False)
+                                     collate_fn=vg_collate_fn, drop_last=False)
 
-        test_dataset = vqa_dataset(vg_test_qa, image_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
+        test_dataset = vg_dataset(vg_test_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
         test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
-                                     collate_fn=vqa_collate_fn, drop_last=False)
+                                     collate_fn=vg_collate_fn, drop_last=False)
 
         # the iterator
         itr = iter(cycle(dataloader))
