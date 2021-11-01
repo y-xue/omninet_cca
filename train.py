@@ -486,6 +486,119 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             #     summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, Caption Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
             
+        elif task == 'vg':
+            if i + 1 >= train_steps:
+                # test the model when training finishes
+                # evaluate on test
+                shared_model.restore(args.model_save_path, 'best/0')
+                model = shared_model
+                model = model.eval()
+
+                start_time = time.time()
+                val_loss = 0
+                val_acc=0
+                n_correct = 0
+                n_total = 0
+                log_str += '-'*100 + '\nTest step\n'
+                print('-'*100 + '\nTest step')
+                for b in test_dl:
+                    imgs = b['img']
+                    answers = b['ans']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        answers = answers.cuda(device=gpu_id)
+                    questions = b['ques']
+
+                    pred, loss, acc = r.vg(model, imgs, questions, targets=answers,mode='predict',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, VG test loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Test takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, VG test loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('-'*100 )
+
+                print('Test takes: {:.8f}s'.format(time.time() - start_time))
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+            if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):
+                if i == (start+1) and not eval_first:
+                    continue
+                start_time = time.time()
+                model = model.eval()
+                val_loss = 0
+                val_acc=0
+                n_correct = 0
+                n_total = 0
+                log_str += '-'*100 + '\nEvaluation step\n'
+                print('-'*100 + '\nEvaluation step')
+                for b in val_dl:
+                    imgs = b['img']
+                    answers = b['ans']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        answers = answers.cuda(device=gpu_id)
+                    questions = b['ques']
+
+                    pred, loss, acc = r.vg(model, imgs, questions, targets=answers,mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, VG validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, VG validation loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('-'*100 )
+
+                print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
+
+                if val_acc1 > best_val_acc:
+                    best_val_acc = val_acc1
+                    best_iteration = step-1
+                    log_str += 'best_iteration:{}\n'.format(best_iteration)
+                    print('best_iteration:{}'.format(best_iteration))
+
+                    shared_model.save(args.model_save_path, 'best/0')
+                    optimizer.save(args.model_save_path, 'best/0')
+
+                    with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
+                        pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+                model = model.train()
+                continue
+            batch = next(DL)
+            imgs = batch['img']
+            answers = batch['ans']
+            if gpu_id >= 0:
+                imgs = imgs.cuda(device=gpu_id)
+                answers = answers.cuda(device=gpu_id)
+            questions = batch['ques']
+            _, loss,acc = r.vg(model, imgs, questions, targets=answers, greedy_only=args.greedy_only)
+            loss.backward()
+            loss=loss.detach()
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
+            log_str += 'Step %d, VG Loss: %f, Accuracy:  %f %%\n' % (step, loss,acc)
+            print('Step %d, VG Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
+
         elif task == 'socialiq':
             if i + 1 >= train_steps:
                 # test the model when training finishes

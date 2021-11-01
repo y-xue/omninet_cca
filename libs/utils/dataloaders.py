@@ -841,6 +841,120 @@ def social_iq_collate_fn(data):
 
 
 
+class vg_dataset(Dataset):
+    def __init__(self, qa_file, image_dir, vocab_file, transforms=None):
+        with open(qa_file, 'r') as f:
+            qas = json.load(f)
+        self.imgs = []
+        self.ques = []
+        self.ques_ids = []
+        self.ans = []
+        self.ans_str = []
+        with open(vocab_file,'rb') as f:
+            ans_to_id,id_to_ans=pickle.loads(f)
+        # load the questions
+        for x in tqdm.tqdm(qas,'Loading VG data to memory'):
+            # get the path
+            for qa in x:
+                answer = qa['answer']
+                img_file = os.path.join(image_dir, '%s.jpg'%qa['image_id'])
+                self.imgs.append(img_file)
+                self.ques.append(qa['question'])
+                self.ans.append(ans_to_id[answer])
+                self.ans_str.append(answer)
+                self.ques_ids.append(qa['qa_id'])
+            
+        self.transform = transforms
+        self.N=len(self.ques)
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, idx):
+        img = Image.open(self.imgs[idx])
+        img = img.convert('RGB')
+        if self.transform is not None:
+            img = self.transform(img)
+        else:
+            img = transforms.ToTensor()(img).convert("RGB")
+        ques = self.ques[idx]
+        
+        ans = self.ans[idx]
+        ans_str = self.ans_str[idx]
+        ques_id = self.ques_ids[idx]
+        
+        return {'img': img, 'ques': ques, 'ans': ans, 'ques_id': ques_id, 'ans_str': ans_str}
+
+
+def vqa_batchgen(vg_dir, image_dir, num_workers=1, batch_size=1, data_seed=68):
+        random.seed(data_seed)
+        np.random.seed(data_seed)
+        torch.manual_seed(data_seed)
+
+        # a transformation for the images
+        vg_train_qa=os.path.join(vg_dir,'train_qa.json')
+        vg_val_qa=os.path.join(vg_dir,'val_qa.json')
+        vg_test_qa=os.path.join(vg_dir,'test_qa.json')
+        vocab_file=os.path.join('conf/vg_vocab.pkl')
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transformer = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(.4, .4, .4),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        # the dataset
+        dataset = vqa_dataset(vg_train_qa, image_dir+'/VG_100K', vocab_file, transforms=transformer)
+        # the data loader
+        dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+                                     collate_fn= vqa_collate_fn, drop_last=True,pin_memory=True)
+        val_tfms = transforms.Compose([
+            transforms.Resize(int(224 * 1.14)),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        val_dataset = vqa_dataset(vg_val_qa, image_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
+        # the data loader
+        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        test_dataset = vqa_dataset(vg_test_qa, image_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
+        # the data loader
+        test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        # the iterator
+        itr = iter(cycle(dataloader))
+        return itr,val_dataloader,test_dataloader
+
+
+def vg_collate_fn(data):
+    # the collate function for dataloader
+    collate_images = []
+    collate_ques = []
+    collate_ques_ids = []
+    collate_ans=[]
+    collate_ans_str=[]
+    for d in data:
+        collate_images.append(d['img'])
+        collate_ques.append(d['ques'])
+        collate_ques_ids.append(d['ques_id'])
+        collate_ans.append((d['ans']))
+        collate_ans_str.append(d['ans_str'])
+        
+    collate_images = torch.stack(collate_images, dim=0)
+    collate_ans=torch.tensor(collate_ans).reshape([-1,1])
+    # return a dictionary of images and captions
+    # return dict of collated images answers and questions
+    return {
+        'img': collate_images,
+        'ques': collate_ques,
+        'ans': collate_ans,
+        'ans_str': collate_ans_str,
+        'ques_id': collate_ques_ids
+    }
+
 
 
 

@@ -42,7 +42,7 @@ class OmniNet(nn.Module):
         self.gpu_id = gpu_id
         tasks = {'PENN': pc['penn_output_classes'], 'HMDB':pc['hmdb_output_classes'],
                  'IMAGE_CAPTION':pc['english_language_output_vocab'],'VQA':pc['vqa_output_vocab'],
-                 'SIQ':pc['SIQ_output_classes']}
+                 'SIQ':pc['SIQ_output_classes'],'VG':pc['VG_output_classes']}
         self.cnp = CNP(tasks,conf=cc,domains=d, gpu_id=gpu_id)
         
         self.image_input_perph = ImageInputPeripheral(output_dim=cc['input_dim'], 

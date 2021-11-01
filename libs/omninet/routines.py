@@ -25,6 +25,37 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
+    # Reset the cnp memory
+    batch_size = images.shape[0]
+    omninet.reset(batch_size)
+    # Encode and store images
+    omninet.encode_images(images,domain='IMAGE')
+    # Encode and store questions
+    omninet.encode_englishtexts(questions)
+
+    attns = omninet.cross_cache_attention()
+
+    if mode in ['train','val'] and not greedy_only:
+        predictions, _ = omninet.decode_from_targets('VG', targets=targets)
+    elif mode=='predict' or greedy_only:
+        predictions, _ = omninet.decode_greedy('VG', num_steps=num_steps)
+    # Calculate loss if targets is provided
+    if targets is not None:
+        loss, acc = calc_nll_loss_and_acc(predictions,targets)
+    else:
+        loss,acc=None, None
+    if return_str_preds:
+        # Return predictions in detokenized string format
+        predictions = predictions.argmax(-1)
+    try:
+        if attns is not None:
+            return predictions, loss, acc, None, attns
+    except:
+        pass
+    return predictions, loss, acc, None
+
+
 def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
     batch_size = videos.shape[0]
