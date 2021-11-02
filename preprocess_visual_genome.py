@@ -25,7 +25,8 @@ def remove_preps(qa):
                     modified_ans = modified_ans[:-1]
                 qa[i]['qas'][j]['answer'] = modified_ans
 
-                single_worded_answer_qas.append(qa[i]['qas'][j])
+                if len(modified_ans.split(' ')) == 1:
+                    single_worded_answer_qas.append(qa[i]['qas'][j])
         qa[i]['qas'] = single_worded_answer_qas
             
     with open(data_dir+'/question_answers_extracted.json','w') as f:

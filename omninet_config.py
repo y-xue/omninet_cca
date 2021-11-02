@@ -76,13 +76,12 @@ def cca_config():
     cnp_conf['pos_emb_streams'] = None
     cnp_conf['cca_n_layers'] = 6
     cnp_conf['cca_n_heads'] = 8
-    cnp_conf['sa_n_layers'] = 6
-    cnp_conf['sa_n_heads'] = 8
-    cnp_conf['psa_n_layers'] = 6
-    cnp_conf['psa_n_heads'] = 8
+    cnp_conf['sa_n_layers'] = [6,6,6]
+    cnp_conf['sa_n_heads'] = [8,8,8]
     cnp_conf['cca_hidden_dim'] = 4096
     cnp_conf['cca_d_k'] = 64
     cnp_conf['cca_d_v'] = 64
+    cnp_conf['psa_res'] = False
     cnp_conf['default_attn_blocks'] = False
     cnp_conf['dropout_p'] = 0.1
     cnp_conf['dropout_s'] = 0.1

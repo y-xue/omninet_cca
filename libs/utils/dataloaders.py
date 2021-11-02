@@ -379,7 +379,7 @@ def coco_collate_fn(data):
 
 
 class vqa_dataset(Dataset):
-    def __init__(self, ques_file, ann_file, image_dir,vocab_file, transforms=None, structured_data=None, non_ma_only=False, two_ques_file=None, aug_text_file=None):
+    def __init__(self, ques_file, ann_file, image_dir,vocab_file, transforms=None, structured_data=None, non_ma_only=False, all_ans=False, two_ques_file=None, aug_text_file=None):
         vqa = VQA(annotation_file=ann_file, question_file=ques_file)
         if two_ques_file is not None:
             with open(two_ques_file, 'rb') as f:
@@ -408,7 +408,7 @@ class vqa_dataset(Dataset):
             # get the path
             answer = vqa.loadQA(x['question_id'])
             m_a=answer[0]['multiple_choice_answer']
-            if (m_a in ans_to_id and not non_ma_only) or (m_a not in ans_to_id and non_ma_only):
+            if all_ans or (m_a in ans_to_id and not non_ma_only) or (m_a not in ans_to_id and non_ma_only):
                 # if m_a in ans_to_id:
                 #     self.is_mas.append(True)
                 # else:
@@ -554,6 +554,103 @@ def vqa_collate_fn(data):
         'ques_id': collate_ques_ids,
         'struct': collate_struct
     }
+
+def vqa_metric_exp_batchgen(vqa_dir, image_dir, num_workers=1, batch_size=1, data_seed=68):
+        random.seed(data_seed)
+        np.random.seed(data_seed)
+        torch.manual_seed(data_seed)
+
+        # a transformation for the images
+        vqa_train_ques=os.path.join(vqa_dir,'metric_experiment_train_questions.json')
+        vqa_train_ann=os.path.join(vqa_dir,'metric_experiment_train_annotations.json')
+        vqa_val_ques=os.path.join(vqa_dir,'metric_experiment_val_questions.json')
+        vqa_val_ann=os.path.join(vqa_dir,'metric_experiment_val_annotations.json')
+        vqa_test_ques=os.path.join(vqa_dir,'metric_experiment_test_questions.json')
+        vqa_test_ann=os.path.join(vqa_dir,'metric_experiment_test_annotations.json')
+        vocab_file=os.path.join('conf/vqa_vocab.pkl')
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transformer = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(.4, .4, .4),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        # the dataset
+        dataset = vqa_dataset(vqa_train_ques, vqa_train_ann, image_dir, vocab_file, transforms=transformer)
+        # the data loader
+        dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+                                     collate_fn= vqa_collate_fn, drop_last=True,pin_memory=True)
+        val_tfms = transforms.Compose([
+            transforms.Resize(int(224 * 1.14)),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        val_dataset = vqa_dataset(vqa_val_ques, vqa_val_ann, image_dir, vocab_file, transforms=val_tfms, all_ans=True)
+        # the data loader
+        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        test_dataset = vqa_dataset(vqa_test_ques, vqa_test_ann, image_dir, vocab_file, transforms=val_tfms, all_ans=True)
+        # the data loader
+        test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        # the iterator
+        itr = iter(cycle(dataloader))
+        return itr,val_dataloader,test_dataloader
+
+def vqa_batchgen_with_test(vqa_dir, image_dir, num_workers=1, batch_size=1, data_seed=68):
+        random.seed(data_seed)
+        np.random.seed(data_seed)
+        torch.manual_seed(data_seed)
+
+        # a transformation for the images
+        vqa_train_ques=os.path.join(vqa_dir,'train_questions.json')
+        vqa_train_ann=os.path.join(vqa_dir,'train_annotations.json')
+        vqa_val_ques=os.path.join(vqa_dir,'val_questions.json')
+        vqa_val_ann=os.path.join(vqa_dir,'val_annotations.json')
+        vqa_test_ques=os.path.join(vqa_dir,'v2_OpenEnded_mscoco_val2014_questions.json')
+        vqa_test_ann=os.path.join(vqa_dir,'v2_mscoco_val2014_annotations.json')
+        vocab_file=os.path.join('conf/vqa_vocab.pkl')
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transformer = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(.4, .4, .4),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        # the dataset
+        dataset = vqa_dataset(vqa_train_ques, vqa_train_ann, image_dir, vocab_file, transforms=transformer)
+        # the data loader
+        dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+                                     collate_fn= vqa_collate_fn, drop_last=True,pin_memory=True)
+        val_tfms = transforms.Compose([
+            transforms.Resize(int(224 * 1.14)),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        val_dataset = vqa_dataset(vqa_val_ques, vqa_val_ann, image_dir, vocab_file, transforms=val_tfms, all_ans=True)
+        # the data loader
+        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        test_dataset = vqa_dataset(vqa_test_ques, vqa_test_ann, image_dir, vocab_file, transforms=val_tfms, all_ans=True)
+        # the data loader
+        test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        test_non_ma_dataset = vqa_dataset(vqa_test_ques, vqa_test_ann, image_dir, vocab_file, transforms=val_tfms, structured_data=structured_data, non_ma_only=True, two_ques_file=two_ques_file)
+        # the data loader
+        test_non_ma_dataloader = DataLoader(test_non_ma_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+                                     collate_fn=vqa_collate_fn, drop_last=False)
+
+        # the iterator
+        itr = iter(cycle(dataloader))
+        return itr,val_dataloader,test_dataloader,test_non_ma_dataloader 
 
 class penn_dataset(Dataset):
     ''' Pytorch Penn Treebank Dataset '''
@@ -918,12 +1015,12 @@ def vg_batchgen(vg_dir, num_workers=1, batch_size=1, data_seed=68):
         ])
         val_dataset = vg_dataset(vg_val_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
-        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size*2), shuffle=True,
                                      collate_fn=vg_collate_fn, drop_last=False)
 
         test_dataset = vg_dataset(vg_test_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
-        test_dataloader = DataLoader(test_dataset, num_workers=num_workers, batch_size=int(batch_size/2), shuffle=True,
+        test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=int(batch_size*2), shuffle=True,
                                      collate_fn=vg_collate_fn, drop_last=False)
 
         # the iterator

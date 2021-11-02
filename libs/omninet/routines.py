@@ -48,12 +48,9 @@ def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    try:
-        if attns is not None:
-            return predictions, loss, acc, None, attns
-    except:
-        pass
-    return predictions, loss, acc, None
+    if attns is not None:
+        return predictions, loss, acc, attns
+    return predictions, loss, acc
 
 
 def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
@@ -83,11 +80,8 @@ def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_s
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    try:
-        if attns is not None:
-            return predictions, loss, acc, attns
-    except:
-        pass
+    if attns is not None:
+        return predictions, loss, acc, attns
     return predictions, loss, acc
 
 def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_steps=1):
@@ -132,9 +126,9 @@ def vqa(omninet,images,questions,structured=None,structured_one_hot=None,targets
     attns = omninet.cross_cache_attention()
 
     if mode in ['train','val'] and not greedy_only:
-        predictions, l1_loss_struct = omninet.decode_from_targets('VQA', targets=targets)
+        predictions, l1_loss_struct, dec_attns = omninet.decode_from_targets('VQA', targets=targets)
     elif mode=='predict' or greedy_only:
-        predictions, l1_loss_struct = omninet.decode_greedy('VQA', num_steps=num_steps)
+        predictions, l1_loss_struct, dec_attns = omninet.decode_greedy('VQA', num_steps=num_steps)
     # Calculate loss if targets is provided
     if targets is not None:
         loss, acc = calc_nll_loss_and_acc(predictions,targets)
@@ -143,11 +137,8 @@ def vqa(omninet,images,questions,structured=None,structured_one_hot=None,targets
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    try:
-        if attns is not None:
-            return predictions, loss, acc, l1_loss_struct, attns
-    except:
-        pass
+    if attns is not None or dec_attns is not None:
+        return predictions, loss, acc, l1_loss_struct, attns, dec_attns
     return predictions, loss, acc, l1_loss_struct
 
 def vqa_struct(omninet,images,questions,structured,structured_one_hot=None,targets=None,mode='train',return_str_preds=False,num_steps=1):

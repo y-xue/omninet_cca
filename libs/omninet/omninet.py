@@ -111,21 +111,21 @@ class OmniNet(nn.Module):
     def rename_mha_checkpoint(self, pretrained_dict):
         return {k.replace('mha', 'slf_attn'): v for k, v in pretrained_dict.items()}
 
-    def restore(self, checkpoint_dir, iterations):
-        save_dir = os.path.join(checkpoint_dir, str(iterations), 'model.pth')
-        pretrained_dict=self.rename_mha_checkpoint(torch.load(save_dir))
+    def restore_state_dict(self, pretrained_dict):
         model_dict=self.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if
                        (k in model_dict) and (model_dict[k].shape == pretrained_dict[k].shape)}
         self.load_state_dict(pretrained_dict,strict=False)
+
+    def restore(self, checkpoint_dir, iterations):
+        save_dir = os.path.join(checkpoint_dir, str(iterations), 'model.pth')
+        pretrained_dict=self.rename_mha_checkpoint(torch.load(save_dir))
+        self.restore_state_dict(pretrained_dict)
         print('Restored existing model with iterations: {}'.format(iterations))
     
     def restore_file(self, file):
         pretrained_dict=self.rename_mha_checkpoint(torch.load(file))
-        model_dict=self.state_dict()
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() if
-                       (k in model_dict) and (model_dict[k].shape == pretrained_dict[k].shape)}
-        self.load_state_dict(pretrained_dict,strict=False)
+        self.restore_state_dict(pretrained_dict)
     
     @staticmethod
     def __defaultconf__():

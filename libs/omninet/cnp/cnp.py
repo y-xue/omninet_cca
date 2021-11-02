@@ -105,14 +105,14 @@ class CNP(nn.Module):
             # TODO: add necessary configs
             self.patch_embedding = PatchEmbedding(self.input_dim, conf['patch_sizes'], conf['max_clip_len'], conf['max_patches_h'], conf['max_patches_w'], self.spatial_dim, stride=conf['patch_stride'], pos_emb=conf['patch_emb_pos'], dropout=conf['dropout_patch_emb'], gpu_id=self.gpu_id)
         if self.use_cca:
-            self.cca = CrossCacheAttention(conf['cca_caches'], conf['cca_n_layers'], conf['sa_n_layers'], conf['psa_n_layers'],
+            self.cca = CrossCacheAttention(conf['cca_caches'], conf['cca_n_layers'], conf['sa_n_layers'],
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
-                                                conf['cca_hidden_dim'], conf['cca_n_heads'], conf['sa_n_heads'], conf['psa_n_heads'], conf['cca_d_k'], conf['cca_d_v'], 
+                                                conf['cca_hidden_dim'], conf['cca_n_heads'], conf['sa_n_heads'], conf['cca_d_k'], conf['cca_d_v'], 
                                                 conf['default_attn_blocks'], conf['use_vit_mlp'], 
-                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], dropout_patch_emb=conf['dropout_patch_emb'], drop_path_rate=conf['drop_path_rate'], sa_drop_path_rate=conf['sa_drop_path_rate'], return_attns=conf['save_cca_attn'], patch_pos=conf['patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'], gpu_id=self.gpu_id)
+                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], dropout_patch_emb=conf['dropout_patch_emb'], drop_path_rate=conf['drop_path_rate'], sa_dropout_rates=conf['sa_dropout_rates'], sa_drop_path_rates=conf['sa_drop_path_rates'], return_attns=conf['save_cca_attn'], learnable_patch_pos=conf['learnable_patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'], gpu_id=self.gpu_id)
         self.decoder=Decoder(self.max_seq_len,self.decoder_n_layers,self.decoder_n_heads,self.decoder_d_k,
                              self.decoder_d_v,self.decoder_dim,self.decoder_hidden_dim,self.temporal_dim,
-                             self.spatial_dim,self.output_dim, dropout=self.dropout,gpu_id=self.gpu_id)
+                             self.spatial_dim,self.output_dim, dropout=self.dropout,return_attns=conf['save_decoder_attn'],gpu_id=self.gpu_id)
 
         #Initialize the various CNP caches as empty
         self.spatial_cache=None
@@ -161,7 +161,7 @@ class CNP(nn.Module):
             if pad_mask is not None:
                 pad_extra=torch.zeros((b,1),device=self.gpu_id,dtype=pad_mask.dtype)
                 pad_mask=torch.cat([pad_extra,pad_mask],1)
-            logits,=self.decoder(dec_inputs,self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
+            logits,dec_attns=self.decoder(dec_inputs,self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
                                  self.pad_cache,
                                  recurrent_steps=recurrent_steps,pad_mask=pad_mask)
 
@@ -183,7 +183,7 @@ class CNP(nn.Module):
             #Predict using the task specific classfier
             predictions=self.output_clfs[self.task_dict[task]](logits)
             predictions=predictions[:,0:t,:]
-            return log_softmax(predictions,dim=2), l1_loss
+            return log_softmax(predictions,dim=2), l1_loss, dec_attns
         else:
             control = self.control_peripheral(task, (self.batch_size))
             control = control.unsqueeze(1)
@@ -193,7 +193,7 @@ class CNP(nn.Module):
             dec_inputs=control
             
             for i in range(num_steps-1):
-                logits, = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
+                logits,dec_attns = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
                                        self.pad_cache,
                                        recurrent_steps=recurrent_steps)
                 prediction = self.output_clfs[self.task_dict[task]](logits)
@@ -207,7 +207,7 @@ class CNP(nn.Module):
                     p=torch.topk(softmax(prediction),beam_width)
                     
                 dec_inputs=torch.cat([dec_inputs,prediction],1)
-            logits, = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,                                     self.pad_cache,recurrent_steps=recurrent_steps)
+            logits,dec_attns = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,                                     self.pad_cache,recurrent_steps=recurrent_steps)
 
             # if self.structured_cache is not None:
             #     structured_logits,_ = self.structured_decoder(self.structured_cache)
@@ -226,7 +226,7 @@ class CNP(nn.Module):
                 l1_loss = torch.sum(torch.abs(self.combined_logit_proj.weight[:,self.structured_dim:])) 
             
             predictions = self.output_clfs[self.task_dict[task]](logits)
-            return log_softmax(predictions,dim=2), l1_loss
+            return log_softmax(predictions,dim=2), l1_loss, dec_attns
 
         
 
@@ -509,7 +509,7 @@ class PatchEmbedding(nn.Module):
         patch_seq = patch_seq.reshape(b,t,f,n_patches_h,n_patches_w).permute(0,1,3,4,2)
         # print('patch_seq', patch_seq.shape)
 
-        if not hasattr(self, 'pos_emb') or self.pos_emb:
+        if self.pos_emb:
             # n_patches = patch_seq.shape[1]//t
             # ppos = self.patch_pos_emb(torch.arange(n_patches, device=self.gpu_id))
             ppos_h = self.patch_pos_h_emb(torch.arange(n_patches_h, device=self.gpu_id))
@@ -544,14 +544,12 @@ class PatchEmbedding(nn.Module):
         return patch_seq
 
 class CrossCacheAttention(nn.Module):
-    def __init__(self, cache_names, n_layers, sa_n_layers, psa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_head, psa_n_head, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout_patch_emb=0.1, dropout=0.1, drop_path_rate=0., sa_drop_path_rate=0., return_attns=False, patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, sa_on_whole_cache=True, gpu_id=-1):
+    def __init__(self, cache_names, n_layers, sa_n_layers, d_p, d_s, d_t, d_inner, n_head, sa_n_heads, d_k, d_v, default_attn_blocks=False, vit_mlp=False, cca_streams=None, pos_emb_streams=None, dropout_p=0.1, dropout_s=0.1, dropout_t=0.1, dropout=0.1,  dropout_patch_emb=0.1, drop_path_rate=0., sa_dropout_rates=[0.,0.,0.], sa_drop_path_rates=[0.,0.,0.], return_attns=False, learnable_patch_pos=False, max_clip_len=16, max_patches_h=7, max_patches_w=7, sa_on_whole_cache=True, res=False, res_dp=0, gpu_id=-1):
         super(CrossCacheAttention, self).__init__()
         self.n_layers = n_layers
         self.n_head = n_head
-        self.sa_n_layers = sa_n_layers
-        self.sa_n_head = sa_n_head
-        self.psa_n_layers = psa_n_layers
-        self.psa_n_head = psa_n_head
+        self.psa_n_layers,self.ssa_n_layers,self.tsa_n_layers = sa_n_layers
+        self.psa_n_head,self.ssa_n_head,self.tsa_n_head = sa_n_heads
         self.d_p = d_p
         self.d_s = d_s
         self.d_t = d_t
@@ -564,13 +562,16 @@ class CrossCacheAttention(nn.Module):
         self.dropout_s = dropout_s
         self.dropout_t = dropout_t
         self.dropout_patch_emb = dropout_patch_emb
+        self.dropout_sa_p, self.dropout_sa_s, self.dropout_sa_t = sa_dropout_rates
         self.drop_path_rate = drop_path_rate
-        self.sa_drop_path_rate = sa_drop_path_rate
+        self.sa_drop_path_rate_p, self.sa_drop_path_rate_s, self.sa_drop_path_rate_t = sa_drop_path_rates
         # self.more_dropout = more_dropout
         self.return_attns = return_attns
         self.cache_names = cache_names
-        self.patch_pos = patch_pos
+        self.learnable_patch_pos = learnable_patch_pos
         self.sa_on_whole_cache = sa_on_whole_cache
+        self.res = res
+        self.res_dp = res_dp
         self.gpu_id = gpu_id
 
         self.cache_symbols = []
@@ -600,11 +601,20 @@ class CrossCacheAttention(nn.Module):
         self.sa_p = self.get_network('p')
         self.sa_t = self.get_network('t')
 
+        d_psa = d_p
+        if 'pp' in self.streams: # self.sa_p is None:
+            d_psa = 768
+            self.sa_p = self.get_network('pp')
+            self.pp_proj1 = nn.Linear(d_p, d_psa)
+            self.pp_proj2 = nn.Linear(d_psa, d_p)
+
         self.p_proj = nn.Linear(2*d_p, d_p) if 'pt' in self.streams and 'ps' in self.streams else None
         self.t_proj = nn.Linear(2*d_t, d_t) if 'tp' in self.streams and 'ts' in self.streams else None
         self.s_proj = nn.Linear(2*d_s, d_s) if 'sp' in self.streams and 'st' in self.streams else None
         # if self.p_proj is not None or self.t_proj is not None or self.s_proj is not None:
         self.proj_dropout = nn.Dropout(dropout)
+        if res_dp != 0:
+            self.dropout_psa_res = nn.Dropout(res_dp)
 
         self.pos_emb_streams = pos_emb_streams
 
@@ -613,12 +623,15 @@ class CrossCacheAttention(nn.Module):
         self.position_enc_t = nn.Embedding.from_pretrained(
             get_sinusoid_encoding_table(n_position, self.d_t, padding_idx=0),
             freeze=True)
-        if not patch_pos:
+        if not learnable_patch_pos:
             self.position_enc_p = nn.Embedding.from_pretrained(
-                get_sinusoid_encoding_table((max_patches_h*max_patches_w+1), d_p, padding_idx=0),
+                get_sinusoid_encoding_table((max_patches_h*max_patches_w+1), d_psa, padding_idx=0),
                 freeze=True)
         else:
-            self.position_enc_p = PatchEmbedding(d_p, (1,1), max_clip_len, max_patches_h, max_patches_w, d_p, dropout=self.dropout_patch_emb, gpu_id=gpu_id)
+            if 'pp' in self.streams:
+                self.position_enc_p = nn.Embedding(577, d_psa)
+            else:
+                self.position_enc_p = PatchEmbedding(d_psa, (1,1), max_clip_len, max_patches_h, max_patches_w, d_psa, dropout=self.dropout_patch_emb, gpu_id=gpu_id)
 
     def get_network(self, cca_type='t'):
         if cca_type not in self.streams:
@@ -646,19 +659,24 @@ class CrossCacheAttention(nn.Module):
             d_model, attn_dropout = (self.d_p, self.d_s), self.dropout_p
             n_layers, n_head = self.n_layers, self.n_head
         elif cca_type == 's':
-            d_model, attn_dropout = self.d_s, self.dropout_s
-            n_layers, n_head = self.sa_n_layers, self.sa_n_head
-            dpr = self.sa_drop_path_rate
+            d_model, attn_dropout = self.d_s, self.dropout_sa_s
+            n_layers, n_head = self.ssa_n_layers, self.ssa_n_head
+            dpr = self.sa_drop_path_rate_s
         elif cca_type == 'p':
-            d_model, attn_dropout = self.d_p, self.dropout_p
+            d_model, attn_dropout = self.d_p, self.dropout_sa_p
             n_layers, n_head = self.psa_n_layers, self.psa_n_head
             d_inner = 2048
-            dpr = self.sa_drop_path_rate
+            dpr = self.sa_drop_path_rate_p
+        elif cca_type == 'pp': # pretrained psa
+            d_model, attn_dropout = 768, self.dropout_sa_p
+            n_layers, n_head = self.psa_n_layers, self.psa_n_head
+            d_inner = 3072
+            dpr = self.sa_drop_path_rate_p
         elif cca_type == 't':
-            d_model, attn_dropout = self.d_t, self.dropout_t
-            n_layers, n_head = self.sa_n_layers, self.sa_n_head
+            d_model, attn_dropout = self.d_t, self.dropout_sa_t
+            n_layers, n_head = self.tsa_n_layers, self.tsa_n_head
             d_inner = 2048
-            dpr = self.sa_drop_path_rate
+            dpr = self.sa_drop_path_rate_t
         else:
             raise Exception('Unknow cca network type.')
 
@@ -673,7 +691,7 @@ class CrossCacheAttention(nn.Module):
                                        dropout=attn_dropout,
                                        drop_path_rate=dpr)
 
-    def cca_pos_emb(self, cache, cache_symbol, stream_name, position_enc, temporal_spatial_link=[(1,49),(-1,1)]):
+    def cca_pos_emb(self, cache, cache_symbol, stream_name, temporal_spatial_link=[(1,49),(-1,1)]):
         k = '%s-%s'%(stream_name,cache_symbol)
         if k not in self.pos_emb_streams:
             # print('cca_pos_emb stream name not found', cache_symbol, stream_name, k)
@@ -687,20 +705,26 @@ class CrossCacheAttention(nn.Module):
         else:
             raise Exception('unknown cache_symbol for position encoding.')
 
-        # print('cca_pos_emb add pos emb for', k) 
-        if cache_symbol == 'p' and hasattr(self, 'patch_pos') and self.patch_pos: 
+        # print('cca_pos_emb add pos emb for', k)
+        b,t,f = cache.shape 
+        if cache_symbol == 'p' and self.learnable_patch_pos: 
             # print('cca_pos_emb patch_pos')
-            cache_lst = []
-            cursor = 0
-            b,_,f = cache.shape
-            for t,s in temporal_spatial_link:
-                if s > 1:
-                    cache_lst.append(position_enc(cache[:,cursor:s].reshape(b,t,s,f)).reshape(b,t*s,f))
-                    cursor += s
-            cache = torch.cat(cache_lst, dim=1)
+            if 'pp' in self.streams:
+                if self.gpu_id >= 0:
+                    src_pos = torch.arange(t,device=self.gpu_id).repeat(b, 1)
+                else:
+                    src_pos = torch.arange(t).repeat(b, 1)
+                cache = cache + position_enc(src_pos)
+            else:
+                cache_lst = []
+                cursor = 0
+                for t,s in temporal_spatial_link:
+                    if s > 1:
+                        cache_lst.append(position_enc(cache[:,cursor:s].reshape(b,t,s,f)).reshape(b,t*s,f))
+                        cursor += s
+                cache = torch.cat(cache_lst, dim=1)
         else:
             # print('cca_pos_emb sine')
-            b,t,_=cache.shape
             if self.gpu_id >= 0:
                 src_pos = torch.arange(1, t + 1,device=self.gpu_id).repeat(b, 1)
             else:
@@ -710,7 +734,7 @@ class CrossCacheAttention(nn.Module):
         cache = self.dropout_emb(cache)
         return cache
 
-    def cca_stream(self, net, cache_alpha, cache_beta, stream_name, pad_mask_q=None, pad_mask_k=None):
+    def cca_stream(self, net, cache_alpha, cache_beta, stream_name, pad_mask_q=None, pad_mask_k=None, temporal_spatial_link=[]):
         # print('cca_stream', stream_name)
         if net is None or cache_alpha is None:
             return None,None
@@ -721,19 +745,12 @@ class CrossCacheAttention(nn.Module):
             attn_mask = None
         non_pad_mask=get_non_pad_mask(cache_alpha,pad_mask_q)
 
-        if stream_name[0] == 't':
-            position_enc = self.position_enc_t
-        elif stream_name[0] == 'p':
-            position_enc = self.position_enc_p
-        else:
-            raise Exception('unknown cache_symbol for position encoding.')
-
-        cache_alpha = self.cca_pos_emb(cache_alpha, stream_name[0], stream_name, position_enc)
+        cache_alpha = self.cca_pos_emb(cache_alpha, stream_name[0], stream_name, temporal_spatial_link)
 
         if cache_beta is None:
             return net(cache_alpha, non_pad_mask, attn_mask=attn_mask)
 
-        cache_beta = self.cca_pos_emb(cache_beta, stream_name[1], stream_name, position_enc)
+        cache_beta = self.cca_pos_emb(cache_beta, stream_name[1], stream_name, temporal_spatial_link)
         return net(cache_alpha, non_pad_mask, enc_input_k=cache_beta, enc_input_v=cache_beta, attn_mask=attn_mask)
 
     def combine_stream(self, stream_proj, stream_out1, stream_out2, target_cache):
@@ -761,7 +778,8 @@ class CrossCacheAttention(nn.Module):
                                                     spatial_cache, 
                                                     real_temporal_cache,
                                                     'pt',
-                                                    pad_mask_k=real_pad_cache)
+                                                    pad_mask_k=real_pad_cache,
+                                                    temporal_spatial_link=temporal_spatial_link)
            
         # try:
         #     write_attn('/scratch1/yxuea/out/cca_spatial_temporal_attn_ignore_t0', spatial_temporal_attn.detach().cpu().numpy())
@@ -771,7 +789,8 @@ class CrossCacheAttention(nn.Module):
         spatial_structured_cache, spatial_structured_attn = self.cca_stream(self.cca_p_with_s, 
                                                       spatial_cache, 
                                                       structured_cache,
-                                                      'ps')
+                                                      'ps',
+                                                      temporal_spatial_link=temporal_spatial_link)
         # print('combine pt ps')
         spatial_cross_cache = self.combine_stream(self.p_proj, 
                                                   spatial_temporal_cache, 
@@ -780,14 +799,28 @@ class CrossCacheAttention(nn.Module):
         
         if self.sa_p is not None and spatial_cross_cache is not None:
             # print('sa_p')
-            spatial_cross_cache = self.cca_stream(self.sa_p, spatial_cross_cache, None, 'p')[0]
-
+            if 'pp' in self.streams:
+                psa_in = self.pp_proj1(spatial_cross_cache)
+            else:
+                psa_in = spatial_cross_cache
+            psa_out = self.cca_stream(self.sa_p, spatial_cross_cache, None, 'p',temporal_spatial_link=temporal_spatial_link)[0]
+            if 'pp' in self.streams:
+                psa_out = self.pp_proj2(psa_out)
+            if self.res:
+                if hasattr(self, 'res_dp') and self.res_dp != 0:
+                    spatial_cross_cache += self.dropout_psa_res(psa_out)
+                else:
+                    spatial_cross_cache += psa_out
+            else:
+                spatial_cross_cache = psa_out
+                
         # print('cca_t_with_p')
         temporal_spatial_cache, temporal_spatial_attn = self.cca_stream(self.cca_t_with_p, 
                                                     real_temporal_cache, 
                                                     spatial_cache,
                                                     'tp',
-                                                    pad_mask_q=real_pad_cache)
+                                                    pad_mask_q=real_pad_cache,
+                                                    temporal_spatial_link=temporal_spatial_link)
         # try:
         #     write_attn('/scratch1/yxuea/out/cca_temporal_spatial_attn_ignore_t0', temporal_spatial_attn.detach().cpu().numpy())
         # except:
@@ -797,7 +830,8 @@ class CrossCacheAttention(nn.Module):
                                                        real_temporal_cache, 
                                                        structured_cache,
                                                        'ts',
-                                                       pad_mask_q=real_pad_cache)
+                                                       pad_mask_q=real_pad_cache,
+                                                       temporal_spatial_link=temporal_spatial_link)
         # print('combine tp ts')
         temporal_cross_cache = self.combine_stream(self.t_proj, 
                                                    temporal_spatial_cache, 
@@ -806,12 +840,12 @@ class CrossCacheAttention(nn.Module):
  
         if self.sa_t is not None and temporal_cross_cache is not None:
             if len(temporal_lst) == 1 or self.sa_on_whole_cache:
-                temporal_cross_cache = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache)[0]
+                temporal_cross_cache = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache,temporal_spatial_link=temporal_spatial_link)[0]
             else:
                 temporal_cache_lst = []
                 cursor = 0
                 for len_t in temporal_lst:
-                    temporal_cache_lst.append(self.cca_stream(self.sa_t, temporal_cross_cache[cursor:(cursor+len_t)], None, 't', pad_mask_q=real_pad_cache[cursor:(cursor+len_t)], pad_mask_k=real_pad_cache[cursor:(cursor+len_t)])[0])
+                    temporal_cache_lst.append(self.cca_stream(self.sa_t, temporal_cross_cache[cursor:(cursor+len_t)], None, 't', pad_mask_q=real_pad_cache[cursor:(cursor+len_t)], pad_mask_k=real_pad_cache[cursor:(cursor+len_t)],temporal_spatial_link=temporal_spatial_link)[0])
                     cursor += len_t
                 temporal_cross_cache = torch.cat(temporal_cache_lst, 1)
             
@@ -823,11 +857,13 @@ class CrossCacheAttention(nn.Module):
                                                         structured_cache, 
                                                         real_temporal_cache,
                                                         'st',
-                                                        pad_mask_k=real_pad_cache)
+                                                        pad_mask_k=real_pad_cache,
+                                                        temporal_spatial_link=temporal_spatial_link)
         # print('cca_s_with_p')
         structured_spatial_cache, _ = self.cca_stream(self.cca_s_with_p, 
                                                       structured_cache, 
-                                                      spatial_cache, 'sp')
+                                                      spatial_cache, 'sp',
+                                                      temporal_spatial_link=temporal_spatial_link)
         # print('combine sp st')
         structured_cross_cache = self.combine_stream(self.s_proj, 
                                                     structured_temporal_cache, 
@@ -836,7 +872,7 @@ class CrossCacheAttention(nn.Module):
         # print('structured_cross_cache',structured_cross_cache)
         if self.sa_s is not None and structured_cross_cache is not None:
             # print('sa_s')
-            structured_logits = self.cca_stream(self.sa_s, structured_cross_cache, None, 's')[0]
+            structured_logits = self.cca_stream(self.sa_s, structured_cross_cache, None, 's', temporal_spatial_link=temporal_spatial_link)[0]
             if structured_logits is not None:
                 structured_logits = structured_logits[:,-1:,:]
         else:
@@ -853,7 +889,7 @@ class Decoder(nn.Module):
             self,
             len_max_seq,
             n_layers, n_head, d_k, d_v,
-            d_model, d_inner, temporal_dim, spatial_dim,output_dim,dropout=0.1,gpu_id=-1):
+            d_model, d_inner, temporal_dim, spatial_dim,output_dim,dropout=0.1,return_attns=False,gpu_id=-1):
 
         super().__init__()
         n_position = len_max_seq + 1
@@ -868,6 +904,7 @@ class Decoder(nn.Module):
             for _ in range(n_layers)])
         self.output_fc=nn.Linear(d_model,output_dim)
         self.gpu_id=gpu_id
+        self.return_attns = return_attns
 
     def forward(self, dec_inputs, spatial_cache, temporal_cache,temporal_spatial_link,
                 pad_cache,
@@ -894,8 +931,8 @@ class Decoder(nn.Module):
                 dec_outputs, attns = dec_layer(dec_outputs,temporal_cache, spatial_cache,temporal_spatial_link,
                                                non_pad_mask,slf_attn_mask=slf_attn_mask,dec_enc_attn_mask=dec_enc_attn_mask)
         dec_outputs=self.output_fc(dec_outputs)
-        if return_attns:
+        if self.return_attns:
             return dec_outputs,attns
-        return dec_outputs,
+        return dec_outputs,None
 
 
