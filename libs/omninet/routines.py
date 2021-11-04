@@ -37,9 +37,9 @@ def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False
     attns = omninet.cross_cache_attention()
 
     if mode in ['train','val'] and not greedy_only:
-        predictions, _ = omninet.decode_from_targets('VG', targets=targets)
+        predictions, _, dec_attns = omninet.decode_from_targets('VG', targets=targets)
     elif mode=='predict' or greedy_only:
-        predictions, _ = omninet.decode_greedy('VG', num_steps=num_steps)
+        predictions, _, dec_attns = omninet.decode_greedy('VG', num_steps=num_steps)
     # Calculate loss if targets is provided
     if targets is not None:
         loss, acc = calc_nll_loss_and_acc(predictions,targets)
@@ -48,8 +48,8 @@ def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    if attns is not None:
-        return predictions, loss, acc, attns
+    if attns is not None or dec_attns is not None:
+        return predictions, loss, acc, attns, dec_attns
     return predictions, loss, acc
 
 
@@ -69,9 +69,9 @@ def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_s
     omninet.encode_englishtexts(answers, sa=True)
 
     if mode in ['train','val'] and not greedy_only:
-        predictions, l1_loss_struct = omninet.decode_from_targets('SIQ', targets=targets)
+        predictions, l1_loss_struct, dec_attns = omninet.decode_from_targets('SIQ', targets=targets)
     elif mode=='predict' or greedy_only:
-        predictions, l1_loss_struct = omninet.decode_greedy('SIQ', num_steps=num_steps)
+        predictions, l1_loss_struct, dec_attns = omninet.decode_greedy('SIQ', num_steps=num_steps)
     # Calculate loss if targets is provided
     if targets is not None:
         loss, acc = calc_nll_loss_and_acc(predictions,targets)
@@ -80,8 +80,8 @@ def socialiq(omninet,videos,questions,answers,targets=None,mode='train',return_s
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
-    if attns is not None:
-        return predictions, loss, acc, attns
+    if attns is not None or dec_attns is not None:
+        return predictions, loss, acc, attns, dec_attns
     return predictions, loss, acc
 
 def hmdb(omninet,videos,targets=None,mode='train',return_str_preds=False,num_steps=1):

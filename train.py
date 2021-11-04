@@ -53,6 +53,7 @@ parser = argparse.ArgumentParser(description='OmniNet training script.')
 parser.add_argument('n_iters', help='Number of iterations to train.')
 parser.add_argument('tasks', help='List of tasks seperated by comma.')
 parser.add_argument('batch_sizes', help='List of batch size for each task seperated by comma')
+parser.add_argument('--val_batch_sizes', default=None, type=int, help='Batch size for validation')
 parser.add_argument('--n_jobs', default=1, help='Number of asynchronous jobs to run for each task.')
 parser.add_argument('--n_gpus', default=1, help='Number of GPUs to use')
 parser.add_argument('--n_workers', default=0, type=int, help='Number of workers to load data')
@@ -184,6 +185,7 @@ def set_config(config, conf_type='default'):
     config[0]['temporal_n_heads'] = args.temp_enc_n_heads
     config[0]['decoder_n_layers'] = args.dec_n_layers
     config[0]['decoder_n_heads'] = args.dec_n_heads
+    config[0]['save_decoder_attn'] = args.save_decoder_attn
     if args.patch_size is not None:
         config[0]['patch_sizes'] = (args.patch_size, args.patch_size)
     config[0]['patch_stride'] = args.patch_stride
@@ -217,7 +219,6 @@ def set_config(config, conf_type='default'):
         config[0]['default_attn_blocks'] = args.default_attn_blocks
         config[0]['use_patch'] = not args.no_patch
         config[0]['save_cca_attn'] = args.save_cca_attn
-        config[0]['save_decoder_attn'] = args.save_decoder_attn
         config[0]['learnable_patch_pos'] = args.learnable_patch_pos
         config[0]['patch_emb_pos'] = not args.no_patch_emb_pos
         config[0]['max_clip_len'] = args.max_clip_len
@@ -322,7 +323,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, args.n_warmup_steps,restore,init_lr=args.init_lr)
     elif task == 'vg':
-        DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_sizes, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
@@ -607,7 +608,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 n_total = 0
                 log_str += '-'*100 + '\nTest step\n'
                 print('-'*100 + '\nTest step')
-                for b in test_dl:
+                for b in tqdm(test_dl):
                     imgs = b['img']
                     answers = b['ans']
                     if gpu_id >= 0:
@@ -647,7 +648,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 n_total = 0
                 log_str += '-'*100 + '\nEvaluation step\n'
                 print('-'*100 + '\nEvaluation step')
-                for b in val_dl:
+                for b in tqdm(val_dl):
                     imgs = b['img']
                     answers = b['ans']
                     if gpu_id >= 0:
@@ -1407,7 +1408,7 @@ if __name__ == '__main__':
         print(args)
         print_log(config, args.model_save_path+'.log')
         print_log(args, args.model_save_path+'.log')
-        if 'pp' in args.cca_streams:
+        if args.cca_streams is not None and 'pp' in args.cca_streams:
             shared_model.restore_state_dict(load_vit_weights())
         
     shared_model=shared_model.to(0)

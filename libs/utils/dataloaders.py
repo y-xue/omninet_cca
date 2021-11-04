@@ -982,10 +982,12 @@ class vg_dataset(Dataset):
         return {'img': img, 'ques': ques, 'ans': ans, 'ques_id': ques_id, 'ans_str': ans_str}
 
 
-def vg_batchgen(vg_dir, num_workers=1, batch_size=1, data_seed=68):
+def vg_batchgen(vg_dir, num_workers=1, batch_size=1, val_batch_size=None,  data_seed=68):
         random.seed(data_seed)
         np.random.seed(data_seed)
         torch.manual_seed(data_seed)
+        if val_batch_size is None:
+            val_batch_size = int(batch_size/2)
 
         # a transformation for the images
         vg_train_qa=os.path.join(vg_dir,'train_qa.json')
@@ -1015,12 +1017,12 @@ def vg_batchgen(vg_dir, num_workers=1, batch_size=1, data_seed=68):
         ])
         val_dataset = vg_dataset(vg_val_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
-        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=int(batch_size*2), shuffle=True,
+        val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=val_batch_size, shuffle=True,
                                      collate_fn=vg_collate_fn, drop_last=False)
 
         test_dataset = vg_dataset(vg_test_qa, vg_dir+'/VG_100K_2', vocab_file, transforms=val_tfms)
         # the data loader
-        test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=int(batch_size*2), shuffle=True,
+        test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=val_batch_size, shuffle=True,
                                      collate_fn=vg_collate_fn, drop_last=False)
 
         # the iterator
