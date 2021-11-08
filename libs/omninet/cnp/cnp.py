@@ -533,7 +533,7 @@ class PatchEmbedding(nn.Module):
             xpos = torch.cat([fpos,ppos],3)
             # print('xpos', xpos.shape)
             # print('patch_seq', patch_seq.shape)
-            patch_seq += xpos
+            patch_seq = patch_seq + xpos
 
         # # patch_seq = rearrange(patch_seq, 'b (t p) f -> b t p f', p=n_patches)
         # patch_seq = rearrange(patch_seq, 'b t h w f -> b t (h w) f')
@@ -808,12 +808,12 @@ class CrossCacheAttention(nn.Module):
                 psa_out = self.pp_proj2(psa_out)
             if self.res:
                 if hasattr(self, 'res_dp') and self.res_dp != 0:
-                    spatial_cross_cache += self.dropout_psa_res(psa_out)
+                    spatial_cross_cache = spatial_cross_cache + self.dropout_psa_res(psa_out)
                 else:
-                    spatial_cross_cache += psa_out
+                    spatial_cross_cache = spatial_cross_cache + psa_out
             else:
                 spatial_cross_cache = psa_out
-                
+
         # print('cca_t_with_p')
         temporal_spatial_cache, temporal_spatial_attn = self.cca_stream(self.cca_t_with_p, 
                                                     real_temporal_cache, 
@@ -840,14 +840,18 @@ class CrossCacheAttention(nn.Module):
  
         if self.sa_t is not None and temporal_cross_cache is not None:
             if len(temporal_lst) == 1 or self.sa_on_whole_cache:
-                temporal_cross_cache = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache,temporal_spatial_link=temporal_spatial_link)[0]
+                tsa_out = self.cca_stream(self.sa_t, temporal_cross_cache, None, 't', pad_mask_q=real_pad_cache, pad_mask_k=real_pad_cache,temporal_spatial_link=temporal_spatial_link)[0]
             else:
                 temporal_cache_lst = []
                 cursor = 0
                 for len_t in temporal_lst:
                     temporal_cache_lst.append(self.cca_stream(self.sa_t, temporal_cross_cache[cursor:(cursor+len_t)], None, 't', pad_mask_q=real_pad_cache[cursor:(cursor+len_t)], pad_mask_k=real_pad_cache[cursor:(cursor+len_t)],temporal_spatial_link=temporal_spatial_link)[0])
                     cursor += len_t
-                temporal_cross_cache = torch.cat(temporal_cache_lst, 1)
+                tsa_out = torch.cat(temporal_cache_lst, 1)
+            if self.res:
+                temporal_cross_cache = temporal_cross_cache + tsa_out
+            else:
+                temporal_cross_cache = tsa_out
             
 
         temporal_cross_cache = torch.cat([temporal_cache[:,:n_spatial], temporal_cross_cache], 1)
@@ -872,9 +876,14 @@ class CrossCacheAttention(nn.Module):
         # print('structured_cross_cache',structured_cross_cache)
         if self.sa_s is not None and structured_cross_cache is not None:
             # print('sa_s')
-            structured_logits = self.cca_stream(self.sa_s, structured_cross_cache, None, 's', temporal_spatial_link=temporal_spatial_link)[0]
-            if structured_logits is not None:
-                structured_logits = structured_logits[:,-1:,:]
+            ssa_out = self.cca_stream(self.sa_s, structured_cross_cache, None, 's', temporal_spatial_link=temporal_spatial_link)[0]
+            if self.res:
+                structured_cross_cache = structured_cross_cache + ssa_out
+            else:
+                structured_cross_cache = ssa_out
+
+            if structured_cross_cache is not None:
+                structured_logits = structured_cross_cache[:,:1,:]
         else:
             structured_logits = None
             # print('skip sa_s')

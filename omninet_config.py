@@ -81,7 +81,7 @@ def cca_config():
     cnp_conf['cca_hidden_dim'] = 4096
     cnp_conf['cca_d_k'] = 64
     cnp_conf['cca_d_v'] = 64
-    cnp_conf['psa_res'] = False
+    cnp_conf['sa_res'] = False
     cnp_conf['default_attn_blocks'] = False
     cnp_conf['dropout_p'] = 0.1
     cnp_conf['dropout_s'] = 0.1

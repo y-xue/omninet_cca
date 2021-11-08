@@ -131,8 +131,8 @@ parser.add_argument('--aug_text_file', default=None, type=str, help='file name o
 parser.add_argument('--save_cca_attn', action='store_true', help='true if save cca attention scores')
 parser.add_argument('--save_decoder_attn', action='store_true', help='true if save decoder attention scores')
 parser.add_argument('--eval_mode', default='val', type=str, help='evaluation mode: val or predict')
-parser.add_argument('--psa_res', action='store_true', help='true if add residual connection for self attention on spatial stream')
-parser.add_argument('--psa_res_dp', default=0, type=float, help='dropout at the residual connection on spatial stream')
+parser.add_argument('--sa_res', action='store_true', help='true if add residual connection for self attention after cca')
+parser.add_argument('--sa_res_dp', default=0, type=float, help='dropout at the residual connection on spatial stream')
 parser.add_argument('--test', action='store_true', help='true if test the model')
 
 args = parser.parse_args()
@@ -214,8 +214,8 @@ def set_config(config, conf_type='default'):
         config[0]['cca_caches'] = args.cca_caches
         config[0]['cca_streams'] = args.cca_streams
         config[0]['pos_emb_streams'] = args.pos_emb_streams
-        config[0]['psa_res'] = args.psa_res
-        config[0]['psa_res_dp'] = args.psa_res_dp
+        config[0]['sa_res'] = args.sa_res
+        config[0]['sa_res_dp'] = args.sa_res_dp
         config[0]['default_attn_blocks'] = args.default_attn_blocks
         config[0]['use_patch'] = not args.no_patch
         config[0]['save_cca_attn'] = args.save_cca_attn
