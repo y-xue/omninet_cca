@@ -720,8 +720,8 @@ class CrossCacheAttention(nn.Module):
                 cursor = 0
                 for t,s in temporal_spatial_link:
                     if s > 1:
-                        cache_lst.append(position_enc(cache[:,cursor:s].reshape(b,t,s,f)).reshape(b,t*s,f))
-                        cursor += s
+                        cache_lst.append(position_enc(cache[:,cursor:(t*s)].reshape(b,t,s,f)).reshape(b,t*s,f))
+                        cursor += (t*s)
                 cache = torch.cat(cache_lst, dim=1)
         else:
             # print('cca_pos_emb sine')
