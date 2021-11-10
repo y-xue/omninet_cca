@@ -109,7 +109,15 @@ class CNP(nn.Module):
                                                 self.spatial_dim, self.structured_dim, self.temporal_dim, 
                                                 conf['cca_hidden_dim'], conf['cca_n_heads'], conf['sa_n_heads'], conf['cca_d_k'], conf['cca_d_v'], 
                                                 conf['default_attn_blocks'], conf['use_vit_mlp'], 
-                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], dropout_patch_emb=conf['dropout_patch_emb'], drop_path_rate=conf['drop_path_rate'], sa_dropout_rates=conf['sa_dropout_rates'], sa_drop_path_rates=conf['sa_drop_path_rates'], return_attns=conf['save_cca_attn'], learnable_patch_pos=conf['learnable_patch_pos'], max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], sa_on_whole_cache=conf['sa_on_whole_cache'], gpu_id=self.gpu_id)
+                                                cca_streams=conf['cca_streams'], pos_emb_streams=conf['pos_emb_streams'], 
+                                                dropout_p=conf['dropout_p'], dropout_s=conf['dropout_s'], dropout_t=conf['dropout_t'], 
+                                                dropout_patch_emb=conf['dropout_patch_emb'], drop_path_rate=conf['drop_path_rate'], 
+                                                sa_dropout_rates=conf['sa_dropout_rates'], sa_drop_path_rates=conf['sa_drop_path_rates'], 
+                                                return_attns=conf['save_cca_attn'], learnable_patch_pos=conf['learnable_patch_pos'], 
+                                                max_clip_len=conf['max_clip_len'], max_patches_h=conf['max_patches_h'], max_patches_w=conf['max_patches_w'], 
+                                                sa_on_whole_cache=conf['sa_on_whole_cache'], 
+                                                res=conf['sa_res'], res_dp=conf['sa_res_dp'],
+                                                gpu_id=self.gpu_id)
         self.decoder=Decoder(self.max_seq_len,self.decoder_n_layers,self.decoder_n_heads,self.decoder_d_k,
                              self.decoder_d_v,self.decoder_dim,self.decoder_hidden_dim,self.temporal_dim,
                              self.spatial_dim,self.output_dim, dropout=self.dropout,return_attns=conf['save_decoder_attn'],gpu_id=self.gpu_id)
@@ -803,7 +811,7 @@ class CrossCacheAttention(nn.Module):
                 psa_in = self.pp_proj1(spatial_cross_cache)
             else:
                 psa_in = spatial_cross_cache
-            psa_out = self.cca_stream(self.sa_p, spatial_cross_cache, None, 'p',temporal_spatial_link=temporal_spatial_link)[0]
+            psa_out = self.cca_stream(self.sa_p, psa_in, None, 'p',temporal_spatial_link=temporal_spatial_link)[0]
             if 'pp' in self.streams:
                 psa_out = self.pp_proj2(psa_out)
             if self.res:
