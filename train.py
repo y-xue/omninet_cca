@@ -53,7 +53,7 @@ parser = argparse.ArgumentParser(description='OmniNet training script.')
 parser.add_argument('n_iters', help='Number of iterations to train.')
 parser.add_argument('tasks', help='List of tasks seperated by comma.')
 parser.add_argument('batch_sizes', help='List of batch size for each task seperated by comma')
-parser.add_argument('--val_batch_sizes', default=None, type=int, help='Batch size for validation')
+parser.add_argument('--val_batch_size', default=None, type=int, help='Batch size for validation')
 parser.add_argument('--n_jobs', default=1, help='Number of asynchronous jobs to run for each task.')
 parser.add_argument('--n_gpus', default=1, help='Number of GPUs to use')
 parser.add_argument('--n_workers', default=0, type=int, help='Number of workers to load data')
@@ -323,7 +323,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 betas=(0.9, 0.98), eps=1e-09),
             512, args.n_warmup_steps,restore,init_lr=args.init_lr)
     elif task == 'vg':
-        DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_sizes, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_size, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
@@ -331,7 +331,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr)
 
     elif task == 'socialiq':
-        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, clip_len=args.max_clip_len, data_seed=int(args.data_seed+restore))
+        DL, val_dl, test_dl = dl.social_iq_batchgen(data_dir=socialiq_dir, video_folder=socialiq_video_folder, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_size, clip_len=args.max_clip_len, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
             Adam(
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
