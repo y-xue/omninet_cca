@@ -23,6 +23,7 @@ OmniNet Central Neural Processor implementation
 
 from .Layers import *
 from ..util import *
+from ..base_models.frame_generator import FrameGenerator
 from torch.nn.functional import log_softmax, softmax
 
 # import os
@@ -90,6 +91,8 @@ class CNP(nn.Module):
             raise ValueError('Tasks must be of type dict containing the tasks and output classifier dimension')
 
         self.output_clfs = nn.ModuleList([nn.Linear(self.output_dim, t) for t in self.task_clflen])
+        if 'mosi' in tasks:
+            self.output_gen = FrameGenerator()
         #Use one extra to define padding
         self.output_embs = nn.ModuleList([nn.Embedding(t+1,self.output_embedding_dim,padding_idx=t) for t in self.task_clflen])
 
@@ -287,7 +290,9 @@ class CNP(nn.Module):
             self.pad_cache=pad_mask
         else:
             self.pad_cache=torch.cat([self.pad_cache,pad_mask],1)
-            
+    
+    def generator(self):
+        return self.output_gen(self.spatial_cache)
 
     def encode_structured(self,cat_encodings,one_encoding,domain='EMPTY'):
         if one_encoding is not None:

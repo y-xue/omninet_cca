@@ -144,6 +144,8 @@ vqa_dir = os.path.join(data_path, 'vqa')
 vg_dir = os.path.join(data_path, 'visual_genome')
 socialiq_dir = os.path.join(data_path, 'socialiq')
 socialiq_video_folder = 'vision/videos_1fps_640-360_resized'
+mosi_dir = os.path.join(data_path, 'CMU_MOSI')
+mosi_video_folder = 'Video/frames5_224_1fps'
 
 structured_path = None
 num_cat_dict = {}
@@ -322,6 +324,15 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 filter(lambda x: x.requires_grad, shared_model.parameters()),
                 betas=(0.9, 0.98), eps=1e-09),
             512, args.n_warmup_steps,restore,init_lr=args.init_lr)
+
+    elif task == 'mosi':
+        DL, val_dl, test_dl = dl.mosi_batchgen(data_dir=mosi_dir, video_folder=mosi_video_folder, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_size, clip_len=5, data_seed=int(args.data_seed+restore))
+        optimizer = ScheduledOptim(
+            Adam(
+                filter(lambda x: x.requires_grad, shared_model.parameters()),
+                betas=(0.9, 0.98), eps=1e-09, weight_decay=args.weight_decay),
+            512, args.n_warmup_steps,restore,max_lr=0.0001,init_lr=args.init_lr)
+
     elif task == 'vg':
         DL, val_dl, test_dl = dl.vg_batchgen(vg_dir, num_workers=args.n_workers, batch_size=batch_size, val_batch_size=args.val_batch_size, data_seed=int(args.data_seed+restore))
         optimizer = ScheduledOptim(
@@ -592,7 +603,128 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
             # if log:
             #     summary_writer.add_scalar('Loss', loss, step)
             print('Step %d, Caption Loss: %f, Accuracy:  %f %%' % (step, loss,acc))
-            
+        
+        elif task == 'mosi':
+            if i + 1 >= train_steps:
+                # test the model when training finishes
+                # evaluate on test
+                shared_model.restore(args.model_save_path, 'best/0')
+                model = shared_model
+                model = model.eval()
+
+                start_time = time.time()
+                val_loss = 0
+                val_acc=0
+                n_correct = 0
+                n_total = 0
+                log_str += '-'*100 + '\nTest step\n'
+                print('-'*100 + '\nTest step')
+                for b in test_dl:
+                    imgs = b['videos']
+                    video_targets = b['video_targets']
+                    labels = b['labels']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        video_targets = video_targets.cuda(device=gpu_id)
+                        labels = labels.cuda(device=gpu_id)
+                    trs = b['trs']
+
+                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targests=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
+                    val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, MOSI test loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Test takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, MOSI test loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('-'*100 )
+
+                print('Test takes: {:.8f}s'.format(time.time() - start_time))
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+            if (log and eval_interval is not None and i % eval_interval == 0 and i >= args.eval_start):
+                if i == (start+1) and not eval_first:
+                    continue
+                start_time = time.time()
+                model = model.eval()
+                val_loss = 0
+                val_acc=0
+                n_correct = 0
+                n_total = 0
+                log_str += '-'*100 + '\nEvaluation step\n'
+                print('-'*100 + '\nEvaluation step')
+                for b in val_dl:
+                    imgs = b['videos']
+                    video_targets = b['video_targets']
+                    labels = b['labels']
+                    if gpu_id >= 0:
+                        imgs = imgs.cuda(device=gpu_id)
+                        video_targets = video_targets.cuda(device=gpu_id)
+                        labels = labels.cuda(device=gpu_id)
+                    trs = b['trs']
+
+                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targests=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
+                    val_acc += acc
+                    bs = labels.shape[0]
+                    n_correct += acc * bs
+                    n_total += bs
+                val_loss/=len(val_dl)
+                val_acc=(val_acc/len(val_dl))
+                val_acc1=n_correct/n_total
+                # summary_writer.add_scalar('Val_loss', val_loss, step)
+
+                log_str += 'Step %d, MOSI validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
+                print('Step %d, MOSI validation loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('-'*100 )
+
+                print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
+
+                if val_acc1 > best_val_acc:
+                    best_val_acc = val_acc1
+                    best_iteration = step-1
+                    log_str += 'best_iteration:{}\n'.format(best_iteration)
+                    print('best_iteration:{}'.format(best_iteration))
+
+                    shared_model.save(args.model_save_path, 'best/0')
+                    optimizer.save(args.model_save_path, 'best/0')
+
+                    with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
+                        pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+
+                print_log(log_str, args.model_save_path+'.log')
+                log_str = ''
+
+                model = model.train()
+                continue
+            batch = next(DL)
+            imgs = batch['videos']
+            video_targets = batch['video_targets']
+            labels = batch['labels']
+            if gpu_id >= 0:
+                imgs = imgs.cuda(device=gpu_id)
+                video_targets = video_targets.cuda(device=gpu_id)
+                labels = labels.cuda(device=gpu_id)
+            trs = batch['trs']
+
+            _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targests=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only)
+            total_loss = loss + mse_loss
+            loss.backward()
+            loss=loss.detach()
+            # if log:
+            #     summary_writer.add_scalar('Loss', loss, step)
+            log_str += 'Step %d, MOSI Loss: %f, MSELoss: %f, Accuracy:  %f %%\n' % (step, loss, mse_loss, acc)
+            print('Step %d, MOSI Loss: %f, MSELoss: %f, Accuracy:  %f %%' % (step, loss, mse_loss, acc))
+
         elif task == 'vg':
             if i + 1 >= train_steps:
                 # test the model when training finishes

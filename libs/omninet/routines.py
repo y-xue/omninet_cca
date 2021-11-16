@@ -25,6 +25,44 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+def mosi(omninet,images,transcripts,targets=None,image_targests=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
+    # Reset the cnp memory
+    batch_size = images.shape[0]
+    omninet.reset(batch_size)
+    # Encode and store images
+    omninet.encode_images(images,domain='IMAGE')
+    # Encode and store transcripts
+    omninet.encode_englishtexts(transcripts)
+
+    attns = omninet.cross_cache_attention()
+
+    if mode in ['train','val'] and not greedy_only:
+        predictions, _, dec_attns = omninet.decode_from_targets('MOSI', targets=targets)
+    elif mode=='predict' or greedy_only:
+        predictions, _, dec_attns = omninet.decode_greedy('MOSI', num_steps=num_steps)
+
+    frames = omninet.generator()
+
+    # Calculate loss if targets is provided
+    if targets is not None:
+        loss, acc = calc_nll_loss_and_acc(predictions,targets)
+    else:
+        loss,acc=None, None
+
+    if image_targests is not None:
+        loss_fn = nn.MSELoss()
+        mse_loss = sum([loss_fn(pred, truth) for pred,truth in zip(predictions,image_targests)])
+    else:
+        mse_loss = None
+
+    if return_str_preds:
+        # Return predictions in detokenized string format
+        predictions = predictions.argmax(-1)
+    if attns is not None or dec_attns is not None:
+        return predictions, loss, acc, mse_loss, attns, dec_attns
+    return predictions, loss, acc, mse_loss
+
+
 def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
     batch_size = images.shape[0]
@@ -235,6 +273,22 @@ def calc_nll_loss_and_acc(predictions, targets, pad_id=None, target_pad_mask=Non
         loss_fn = nn.NLLLoss()
     targets = torch.reshape(targets, [-1])
     loss = loss_fn(pr, targets)
+    #Calculate accuracy
+    preds=predictions.argmax(-1)
+    preds=torch.reshape(preds,[-1])
+    if target_pad_mask is not None:
+        target_pad_mask=torch.reshape(target_pad_mask,[-1])
+        preds=preds+(target_pad_mask*1000000).to(dtype=torch.long)
+        acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]-target_pad_mask.sum().cpu().numpy()))*100
+    else:
+        acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]))*100
+    return loss, acc
+
+def calc_mse_loss(predictions, targets):
+    #Calculate loss
+    loss_fn = nn.MSELoss()
+    
+    loss = loss_fn(predictions, targets)
     #Calculate accuracy
     preds=predictions.argmax(-1)
     preds=torch.reshape(preds,[-1])

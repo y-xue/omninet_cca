@@ -1060,5 +1060,155 @@ def vg_collate_fn(data):
 
 
 
+class mosi_dataset(Dataset):
+    def __init__(self, data_dir, video_folder, split_dict, split='train', clip_len=5, h=224, w=224, target_len=1):
+        self.clip_len = clip_len
+        self.split = split
+        self.resize_height = h
+        self.resize_width = w
+        self.crop_size = 224
+        self.target_len = target_len
+        
+        # Obtain all the filenames of files inside all the class folders
+        # Going through each class folder one at a time
+        self.fnames = []
+        self.trs = []
+        self.labels = []
+
+        with open(os.path.join(data_dir,'Transcript/trs.dict.pkl'), 'rb') as f:
+            trs = pickle.load(f)
+        with open(os.path.join(data_dir,'labels.dict.pkl'), 'rb') as f:
+            labels = pickle.load(f)
+
+        for video_name in labels:
+            self.fnames.append(os.path.join(data_dir, video_folder, video_name))
+            self.trs.append(trs[video_name])
+            self.labels.append(labels[video_name])
+
+    def __len__(self):
+        return len(self.fnames)
+
+    def __getitem__(self, index):
+        buffer = self.load_frames(self.fnames[index])
+        video_target = buffer[-target_len:]
+        buffer = self.crop(buffer[:-target_len], self.clip_len, self.crop_size)
+        if self.split == 'train':
+            # Perform data augmentation
+            buffer = self.randomflip(buffer)
+        buffer = self.normalize(buffer)
+        buffer = self.to_tensor(buffer)
+        return {'video': torch.from_numpy(buffer), 'trs': self.trs[index], 
+                'video_target': torch.from_numpy(video_target), 'label': self.labels[index]}
+        # return torch.from_numpy(buffer), torch.from_numpy(labels).unsqueeze(0)
+
+    def randomflip(self, buffer):
+        """Horizontally flip the given image and ground truth randomly with a probability of 0.5."""
+
+        if np.random.random() < 0.5:
+            for i, frame in enumerate(buffer):
+                frame = cv2.flip(buffer[i], flipCode=1)
+                buffer[i] = cv2.flip(frame, flipCode=1)
+
+        return buffer
+
+    def normalize(self, buffer):
+        buffer=buffer/255
+        for i, frame in enumerate(buffer):
+            frame -= np.array([[[0.485, 0.456, 0.406]]])
+            frame /= np.array([[[0.229, 0.224, 0.225]]])
+            buffer[i] = frame
+
+        return buffer
+    
+    def to_tensor(self, buffer):
+        return buffer.transpose((0, 3, 1, 2))
+    
+    def crop(self, buffer, clip_len, crop_size):
+        # randomly select time index for temporal jittering
+        if buffer.shape[0] - clip_len>0 and self.split=='train':
+            time_index = np.random.randint(buffer.shape[0] - clip_len)
+        else:
+            time_index=0
+        # Randomly select start indices in order to crop the video
+        if self.split=='train':
+            height_index = np.random.randint(buffer.shape[1] - crop_size)
+            width_index = np.random.randint(buffer.shape[2] - crop_size)
+        else:
+            height_index=0
+            width_index=0
+
+        # Crop and jitter the video using indexing. The spatial crop is performed on
+        # the entire array, so each frame is cropped in the same location. The temporal
+        # jitter takes place via the selection of consecutive frames
+        buffer = buffer[time_index:time_index + clip_len,
+                 height_index:height_index + crop_size,
+                 width_index:width_index + crop_size, :]
+
+        return buffer
+
+    def load_frames(self, file_dir):
+        frames = sorted([os.path.join(file_dir, img) for img in os.listdir(file_dir)])
+        frame_count = len(frames)
+        buffer = np.empty((frame_count, self.resize_height, self.resize_width, 3), np.dtype('float32'))
+        for i, frame_name in enumerate(frames):
+            frame = np.array(cv2.imread(frame_name)).astype(np.float64)
+            buffer[i] = frame
+
+        return buffer
+
+def mosi_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, val_batch_size=None, structured_path=None, clip_len=30, data_seed=68):
+    random.seed(data_seed)
+    np.random.seed(data_seed)
+    torch.manual_seed(data_seed)
+    if val_batch_size is None:
+        val_batch_size = max(int(batch_size/2),1)
+
+    structured_data = None
+    if structured_path is not None:
+        with open(structured_path, 'rb') as f:
+            structured_data = pickle.load(f)
+
+    with open(os.path.join(data_dir, 'split.dict.pkl'), 'rb') as f:
+        split_dict = pickle.load(f)
+
+    dataset = mosi_dataset(data_dir, video_folder, split_dict, split='train', clip_len=clip_len)
+    dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
+    
+    print('# of training mini-batches:', len(dataloader))
+    val_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='val', clip_len=clip_len)
+    val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=val_batch_size, shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=False)
+    
+    test_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='test', clip_len=clip_len)
+    test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=val_batch_size, shuffle=True,
+                                 collate_fn=social_iq_collate_fn, drop_last=False)
+    
+    itr = iter(cycle(dataloader))
+    return itr,val_dataloader, test_dataloader
+    # return itr, test_dataloader
+
+
+def mosi_collate_fn(data):
+    collate_videos = []
+    collate_trs = []
+    collate_video_targets = []
+    collate_labels = []
+    for d in data:
+        collate_videos.append(d['video'])
+        collate_trs.append(d['trs'])
+        collate_video_targets.append((d['video_target']))
+        collate_labels.append((d['label']))
+        
+    collate_videos = torch.stack(collate_videos, dim=0)
+    collate_video_targets = torch.stack(collate_video_targets, dim=0)
+    collate_labels=torch.tensor(collate_labels).reshape([-1,1])
+    return {
+        'videos': collate_videos,
+        'trs': collate_trs,
+        'video_targets': collate_video_targets,
+        'labels': collate_labels
+    }
+
 
 

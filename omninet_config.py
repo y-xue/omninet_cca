@@ -43,7 +43,7 @@ def defaultconf():
         'hmdb_output_classes':52,
         'penn_output_classes':48,
         'SIQ_output_classes':2,
-        'VG_output_classes':21714,
+        'mosi_output_classes':2,
         'no_BOS_EOS': False,
         'num_conti': 0,
         'num_cat_dict': {},
