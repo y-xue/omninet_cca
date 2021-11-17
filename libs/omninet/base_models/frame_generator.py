@@ -127,11 +127,12 @@ class FrameGenerator(nn.Module):
     def __init__(self, 
                 input_channels, hidden_channels, kernel_size, 
                 step=1):
-        super(ConvLSTMCLF, self).__init__()
+        super(FrameGenerator, self).__init__()
         self.convlstm = ConvLSTM(input_channels=input_channels, hidden_channels=hidden_channels, kernel_size=kernel_size, step=step)
         self.img_gen = ImageGenerator()
 
     def forward(self, inputs):
+        inputs = inputs[:,-49:,:].reshape(inputs.shape[0],7,7,inputs.shape[-1]).permute(0,3,1,2)
         xs = self.convlstm(inputs)[0]
         return [self.img_gen(x) for x in xs]
 

@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-def mosi(omninet,images,transcripts,targets=None,image_targests=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
+def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
@@ -37,11 +37,11 @@ def mosi(omninet,images,transcripts,targets=None,image_targests=None,mode='train
     attns = omninet.cross_cache_attention()
 
     if mode in ['train','val'] and not greedy_only:
-        predictions, _, dec_attns = omninet.decode_from_targets('MOSI', targets=targets)
+        predictions, _, dec_attns = omninet.decode_from_targets('mosi', targets=targets)
     elif mode=='predict' or greedy_only:
-        predictions, _, dec_attns = omninet.decode_greedy('MOSI', num_steps=num_steps)
+        predictions, _, dec_attns = omninet.decode_greedy('mosi', num_steps=num_steps)
 
-    frames = omninet.generator()
+    frame_predictions = omninet.generator()
 
     # Calculate loss if targets is provided
     if targets is not None:
@@ -49,9 +49,9 @@ def mosi(omninet,images,transcripts,targets=None,image_targests=None,mode='train
     else:
         loss,acc=None, None
 
-    if image_targests is not None:
+    if image_targets is not None:
         loss_fn = nn.MSELoss()
-        mse_loss = sum([loss_fn(pred, truth) for pred,truth in zip(predictions,image_targests)])
+        mse_loss = sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
     else:
         mse_loss = None
 

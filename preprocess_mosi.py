@@ -8,7 +8,7 @@ import h5py
 data_dir = '/files/yxue/research/allstate/data/CMU_MOSI'
 
 video_dir     = data_dir+'/Video/Segmented'
-video_processed_dir = data_dir+'/Video/frames5_224'
+video_processed_dir = data_dir+'/Video/frames5_last5_224'
 
 transcript_dir            = data_dir+'/Transcript/Segmented'
 transcript_processed_dir  = data_dir+'/Transcript/trs'
@@ -16,7 +16,7 @@ transcript_processed_dir  = data_dir+'/Transcript/trs'
 resize_height = 224
 resize_width = 224
 
-def process_video(vdir, odir, fps):
+def process_video(vdir, odir, fps, last_frames=None):
     nframes = {}
 
     # FNULL = open(os.devnull, 'w')
@@ -56,6 +56,7 @@ def process_video(vdir, odir, fps):
             count = 0
             i = 0
             retaining = True
+            frame_lst = []
 
             while (count < frame_count and retaining):
                 retaining, frame = capture.read()
@@ -66,10 +67,8 @@ def process_video(vdir, odir, fps):
                     # if (frame_height != resize_height) or (frame_width != resize_width):
                     #     resized_frame = cv2.resize(frame, (resize_width, resize_height))
                     resized_frame = cv2.resize(frame, (resize_width, resize_height))
-                    
-                    cv2.imwrite(filename=os.path.join(
-                        images_dir, '0000{}.jpg'.format(str(i))), 
-                    img=frame)
+
+                    frame_lst.append(resized_frame)
 
                     # cv2.imwrite(filename=os.path.join(
                     #     resized_images_dir, '0000{}.jpg'.format(str(i))), 
@@ -81,6 +80,14 @@ def process_video(vdir, odir, fps):
             capture.release()
 
             nframes[video_name] = {'total frames': frame_count, 'extracted frames': i, 'duration (s)': frame_count/original_fps}
+
+            if last_frames is None:
+                last_frames = len(frame_lst)
+
+            for i,frame in enumerate(frame_lst[-last_frames:]):
+                cv2.imwrite(filename=os.path.join(
+                    images_dir, '0000{}.jpg'.format(str(i))), 
+                img=frame)
 
             print(video_name, nframes[video_name])
             # call(['ffmpeg',
@@ -148,7 +155,7 @@ def process_labels(data_dir):
         pickle.dump(label_dict, f)
 
 fps=1
-process_video(video_dir, video_processed_dir, fps)
+process_video(video_dir, video_processed_dir, fps, last_frames=5)
 process_transcript(transcript_dir, transcript_processed_dir)
 
 with open(transcript_processed_dir+'.dict.pkl', 'rb') as f:

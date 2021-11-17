@@ -92,7 +92,7 @@ class CNP(nn.Module):
 
         self.output_clfs = nn.ModuleList([nn.Linear(self.output_dim, t) for t in self.task_clflen])
         if 'mosi' in tasks:
-            self.output_gen = FrameGenerator()
+            self.output_gen = FrameGenerator(self.output_dim, [self.output_dim], 1, 1)
         #Use one extra to define padding
         self.output_embs = nn.ModuleList([nn.Embedding(t+1,self.output_embedding_dim,padding_idx=t) for t in self.task_clflen])
 

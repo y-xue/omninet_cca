@@ -1083,15 +1083,15 @@ class mosi_dataset(Dataset):
         for video_name in labels:
             self.fnames.append(os.path.join(data_dir, video_folder, video_name))
             self.trs.append(trs[video_name])
-            self.labels.append(labels[video_name])
+            self.labels.append(int(labels[video_name]>=0))
 
     def __len__(self):
         return len(self.fnames)
 
     def __getitem__(self, index):
         buffer = self.load_frames(self.fnames[index])
-        video_target = buffer[-target_len:]
-        buffer = self.crop(buffer[:-target_len], self.clip_len, self.crop_size)
+        video_target = buffer[-self.target_len:]
+        buffer = self.crop(buffer[:-self.target_len], self.clip_len, self.crop_size)
         if self.split == 'train':
             # Perform data augmentation
             buffer = self.randomflip(buffer)
@@ -1131,8 +1131,15 @@ class mosi_dataset(Dataset):
             time_index=0
         # Randomly select start indices in order to crop the video
         if self.split=='train':
-            height_index = np.random.randint(buffer.shape[1] - crop_size)
-            width_index = np.random.randint(buffer.shape[2] - crop_size)
+            if buffer.shape[1] - crop_size == 0:
+                height_index = 0
+            else:
+                height_index = np.random.randint(buffer.shape[1] - crop_size)
+
+            if buffer.shape[2] - crop_size == 0:
+                width_index = 0
+            else:
+                width_index = np.random.randint(buffer.shape[2] - crop_size)
         else:
             height_index=0
             width_index=0
@@ -1173,16 +1180,16 @@ def mosi_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, val_batch
 
     dataset = mosi_dataset(data_dir, video_folder, split_dict, split='train', clip_len=clip_len)
     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
-                                 collate_fn=social_iq_collate_fn, drop_last=True,pin_memory=True)
+                                 collate_fn=mosi_collate_fn, drop_last=True,pin_memory=True)
     
     print('# of training mini-batches:', len(dataloader))
     val_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='val', clip_len=clip_len)
     val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=val_batch_size, shuffle=True,
-                                 collate_fn=social_iq_collate_fn, drop_last=False)
+                                 collate_fn=mosi_collate_fn, drop_last=False)
     
     test_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='test', clip_len=clip_len)
     test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=val_batch_size, shuffle=True,
-                                 collate_fn=social_iq_collate_fn, drop_last=False)
+                                 collate_fn=mosi_collate_fn, drop_last=False)
     
     itr = iter(cycle(dataloader))
     return itr,val_dataloader, test_dataloader
@@ -1197,11 +1204,11 @@ def mosi_collate_fn(data):
     for d in data:
         collate_videos.append(d['video'])
         collate_trs.append(d['trs'])
-        collate_video_targets.append((d['video_target']))
+        collate_video_targets.append(d['video_target'])
         collate_labels.append((d['label']))
         
     collate_videos = torch.stack(collate_videos, dim=0)
-    collate_video_targets = torch.stack(collate_video_targets, dim=0)
+    collate_video_targets = torch.stack(collate_video_targets, dim=0).permute(1,0,4,2,3)
     collate_labels=torch.tensor(collate_labels).reshape([-1,1])
     return {
         'videos': collate_videos,
