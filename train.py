@@ -134,6 +134,7 @@ parser.add_argument('--eval_mode', default='val', type=str, help='evaluation mod
 parser.add_argument('--sa_res', action='store_true', help='true if add residual connection for self attention after cca')
 parser.add_argument('--sa_res_dp', default=0, type=float, help='dropout at the residual connection on spatial stream')
 parser.add_argument('--test', action='store_true', help='true if test the model')
+parser.add_argument('--per_pixel_mse', action='store_true', help='true if calculate mse per pixel')
 
 args = parser.parse_args()
 
@@ -629,7 +630,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only)
+                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
                     val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
@@ -671,7 +672,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
                     val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
@@ -716,7 +717,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 labels = labels.cuda(device=gpu_id)
             trs = batch['trs']
 
-            _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only)
+            _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
             total_loss = loss + mse_loss
             loss.backward()
             loss=loss.detach()
