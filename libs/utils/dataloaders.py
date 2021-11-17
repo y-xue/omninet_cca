@@ -1081,6 +1081,9 @@ class mosi_dataset(Dataset):
             labels = pickle.load(f)
 
         for video_name in labels:
+            if split_dict[video_name] != split:
+                continue
+
             self.fnames.append(os.path.join(data_dir, video_folder, video_name))
             self.trs.append(trs[video_name])
             self.labels.append(int(labels[video_name]>=0))
@@ -1181,16 +1184,18 @@ def mosi_batchgen(data_dir, video_folder, num_workers=1, batch_size=1, val_batch
     dataset = mosi_dataset(data_dir, video_folder, split_dict, split='train', clip_len=clip_len)
     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                                  collate_fn=mosi_collate_fn, drop_last=True,pin_memory=True)
-    
     print('# of training mini-batches:', len(dataloader))
+
     val_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='val', clip_len=clip_len)
     val_dataloader = DataLoader(val_dataset, num_workers=num_workers, batch_size=val_batch_size, shuffle=True,
                                  collate_fn=mosi_collate_fn, drop_last=False)
-    
+    print('# of validation mini-batches:', len(val_dataloader))
+
     test_dataset = mosi_dataset(data_dir, video_folder, split_dict, split='test', clip_len=clip_len)
     test_dataloader = DataLoader(test_dataset, num_workers=0, batch_size=val_batch_size, shuffle=True,
                                  collate_fn=mosi_collate_fn, drop_last=False)
-    
+    print('# of test mini-batches:', len(test_dataloader))
+
     itr = iter(cycle(dataloader))
     return itr,val_dataloader, test_dataloader
     # return itr, test_dataloader
