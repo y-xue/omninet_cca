@@ -117,7 +117,7 @@ class Generator(nn.Module):
         
             # output nc * 64 * 64
             nn.ConvTranspose2d(ngf, nc, 5, 3, 0, bias=False),
-            nn.Tanh()
+            nn.Sigmoid()
         )
         
     def forward(self, input):
@@ -126,7 +126,7 @@ class Generator(nn.Module):
 class FrameGenerator(nn.Module):
     def __init__(self):
         super(FrameGenerator, self).__init__()
-        self.img_gen = ImageGenerator()
+        self.img_gen = Generator()
 
     def forward(self, inputs):
         return [self.img_gen(x) for x in inputs]

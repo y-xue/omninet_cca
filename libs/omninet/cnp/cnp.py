@@ -92,7 +92,7 @@ class CNP(nn.Module):
 
         self.output_clfs = nn.ModuleList([nn.Linear(self.output_dim, t) for t in self.task_clflen])
         if 'mosi' in tasks:
-            self.output_gen = FrameGenerator(self.output_dim, [self.output_dim], 1, 1)
+            self.output_gen = FrameGenerator()
         #Use one extra to define padding
         self.output_embs = nn.ModuleList([nn.Embedding(t+1,self.output_embedding_dim,padding_idx=t) for t in self.task_clflen])
 
@@ -241,7 +241,7 @@ class CNP(nn.Module):
             
             predictions = self.output_clfs[self.task_dict[task]](logits)
             if task == 'mosi':
-                frames = self.output_gen(self.logits.permute(1,0,2).unsqueeze(3).unsqueeze(4))
+                frames = self.output_gen(logits.permute(1,0,2).unsqueeze(3).unsqueeze(4))
                 return log_softmax(predictions[:,:1,:],dim=2), frames, l1_loss, dec_attns
             return log_softmax(predictions,dim=2), l1_loss, dec_attns
 
