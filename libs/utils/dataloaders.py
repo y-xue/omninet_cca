@@ -1093,7 +1093,10 @@ class mosi_dataset(Dataset):
 
     def __getitem__(self, index):
         buffer = self.load_frames(self.fnames[index])
-        video_target = buffer[-self.target_len:]
+
+        # make the target frames' pixel features (0,1)
+        video_target = buffer[-self.target_len:]/255
+        
         buffer = self.crop(buffer[:-self.target_len], self.clip_len, self.crop_size)
         if self.split == 'train':
             # Perform data augmentation

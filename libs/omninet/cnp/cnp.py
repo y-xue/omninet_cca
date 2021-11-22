@@ -207,15 +207,18 @@ class CNP(nn.Module):
                 logits,dec_attns = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,
                                        self.pad_cache,
                                        recurrent_steps=recurrent_steps)
-                prediction = self.output_clfs[self.task_dict[task]](logits)
-                prediction=prediction[:,-1,:].unsqueeze(1)
-                prediction=log_softmax(prediction,dim=2).argmax(-1)
-                prediction=self.output_embs[self.task_dict[task]](prediction)
-                prediction = self.emb_decoder_proj(prediction).detach()
-                if self.more_dropout:
-                    prediction = self.proj_dropout(prediction)
-                if beam_width>1:
-                    p=torch.topk(softmax(prediction),beam_width)
+                if task != 'mosi':
+                    prediction = self.output_clfs[self.task_dict[task]](logits)
+                    prediction=prediction[:,-1,:].unsqueeze(1)
+                    prediction=log_softmax(prediction,dim=2).argmax(-1)
+                    prediction=self.output_embs[self.task_dict[task]](prediction)
+                    prediction = self.emb_decoder_proj(prediction).detach()
+                    if self.more_dropout:
+                        prediction = self.proj_dropout(prediction)
+                    if beam_width>1:
+                        p=torch.topk(softmax(prediction),beam_width)
+                else:
+                    prediction=logits[:,-1,:].unsqueeze(1)
                     
                 dec_inputs=torch.cat([dec_inputs,prediction],1)
             logits,dec_attns = self.decoder(dec_inputs, self.spatial_cache, self.temporal_cache,self.temporal_spatial_link,                                     self.pad_cache,recurrent_steps=recurrent_steps)
@@ -237,6 +240,9 @@ class CNP(nn.Module):
                 l1_loss = torch.sum(torch.abs(self.combined_logit_proj.weight[:,self.structured_dim:])) 
             
             predictions = self.output_clfs[self.task_dict[task]](logits)
+            if task == 'mosi':
+                frames = self.output_gen(self.logits.permute(1,0,2).unsqueeze(3).unsqueeze(4))
+                return log_softmax(predictions[:,:1,:],dim=2), frames, l1_loss, dec_attns
             return log_softmax(predictions,dim=2), l1_loss, dec_attns
 
         

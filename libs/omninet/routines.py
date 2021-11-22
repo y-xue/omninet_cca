@@ -36,12 +36,10 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
 
     attns = omninet.cross_cache_attention()
 
-    if mode in ['train','val'] and not greedy_only:
-        predictions, _, dec_attns = omninet.decode_from_targets('mosi', targets=targets)
-    elif mode=='predict' or greedy_only:
-        predictions, _, dec_attns = omninet.decode_greedy('mosi', num_steps=num_steps)
-
-    frame_predictions = omninet.generator()
+    # if mode in ['train','val'] and not greedy_only:
+    #     predictions, frame_predictions, _, dec_attns = omninet.decode_from_targets('mosi', targets=targets)
+    # elif mode=='predict' or greedy_only:
+    predictions, frame_predictions, _, dec_attns = omninet.decode_greedy('mosi', num_steps=num_steps)
 
     # Calculate loss if targets is provided
     if targets is not None:

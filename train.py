@@ -615,6 +615,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
                 start_time = time.time()
                 val_loss = 0
+                val_mse_loss = 0
                 val_acc=0
                 n_correct = 0
                 n_total = 0
@@ -631,19 +632,21 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     trs = b['trs']
 
                     pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
-                    val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_mse_loss += float(mse_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
                     n_correct += acc * bs
                     n_total += bs
                 val_loss/=len(val_dl)
+                val_mse_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
                 val_acc1=n_correct/n_total
                 # summary_writer.add_scalar('Val_loss', val_loss, step)
 
-                log_str += 'Step %d, MOSI test loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += 'Step %d, MOSI test loss: %f, MSELoss: %f, Accuracy %f %%\n' % (step, val_loss, val_mse_loss, val_acc1)
                 log_str += '-'*100 + '\n' + 'Test takes: {:.8f}s\n'.format(time.time() - start_time)
-                print('Step %d, MOSI test loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('Step %d, MOSI test loss: %f, MSELoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss, val_mse_loss, val_acc, val_acc1))
                 print('-'*100 )
 
                 print('Test takes: {:.8f}s'.format(time.time() - start_time))
@@ -657,7 +660,8 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 start_time = time.time()
                 model = model.eval()
                 val_loss = 0
-                val_acc=0
+                val_mse_loss = 0
+                val_acc = 0
                 n_correct = 0
                 n_total = 0
                 log_str += '-'*100 + '\nEvaluation step\n'
@@ -673,19 +677,21 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     trs = b['trs']
 
                     pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
-                    val_loss += float(loss.detach().cpu().numpy()+mse_loss.detach().cpu().numpy())
+                    val_loss += float(loss.detach().cpu().numpy())
+                    val_mse_loss += float(mse_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
                     n_correct += acc * bs
                     n_total += bs
                 val_loss/=len(val_dl)
+                val_mse_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
                 val_acc1=n_correct/n_total
                 # summary_writer.add_scalar('Val_loss', val_loss, step)
 
-                log_str += 'Step %d, MOSI validation loss: %f, Accuracy %f %%\n' % (step, val_loss,val_acc1)
+                log_str += 'Step %d, MOSI validation loss: %f, MSELoss: %f, Accuracy %f %%\n' % (step, val_loss,val_mse_loss,val_acc1)
                 log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
-                print('Step %d, MOSI validation loss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_acc,val_acc1))
+                print('Step %d, MOSI validation loss: %f, MSELoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_mse_loss,val_acc,val_acc1))
                 print('-'*100 )
 
                 print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
@@ -719,8 +725,9 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
             _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, per_pixel_mse=args.per_pixel_mse)
             total_loss = loss + mse_loss
-            loss.backward()
+            total_loss.backward()
             loss=loss.detach()
+            mse_loss=mse_loss.detach()
             # if log:
             #     summary_writer.add_scalar('Loss', loss, step)
             log_str += 'Step %d, MOSI Loss: %f, MSELoss: %f, Accuracy:  %f %%\n' % (step, loss, mse_loss, acc)
