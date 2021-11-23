@@ -135,6 +135,7 @@ parser.add_argument('--sa_res', action='store_true', help='true if add residual 
 parser.add_argument('--sa_res_dp', default=0, type=float, help='dropout at the residual connection on spatial stream')
 parser.add_argument('--test', action='store_true', help='true if test the model')
 parser.add_argument('--frame_loss_w', default=1.0, type=float, help='scale frame loss')
+parser.add_argument('--save_frame', default=None, type=int, help='index of sample of the first validation mini-batch')
 
 args = parser.parse_args()
 
@@ -631,7 +632,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
+                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
                     val_acc += acc
@@ -666,7 +667,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 n_total = 0
                 log_str += '-'*100 + '\nEvaluation step\n'
                 print('-'*100 + '\nEvaluation step')
+                frame_saved = False
                 for b in val_dl:
+                    if not frame_saved and args.save_frame is not None:
+                        save_frame_id = args.save_frame
+                        frame_saved = True
+                    else:
+                        save_frame_id = None
                     imgs = b['videos']
                     video_targets = b['video_targets']
                     labels = b['labels']
@@ -676,7 +683,11 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
+                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w, save_frame_id=save_frame_id)
+                    if save_frame_id is not None:
+                        write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
+                        write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
+
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
                     val_acc += acc
@@ -723,7 +734,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 labels = labels.cuda(device=gpu_id)
             trs = batch['trs']
 
-            _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
+            _, _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
             total_loss = loss + mse_loss
             total_loss.backward()
             loss=loss.detach()

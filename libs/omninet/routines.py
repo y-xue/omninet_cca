@@ -57,8 +57,8 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
     if attns is not None or dec_attns is not None:
-        return predictions, loss, acc, mse_loss, attns, dec_attns
-    return predictions, loss, acc, mse_loss
+        return predictions, frame_predictions, loss, acc, mse_loss, attns, dec_attns
+    return predictions, frame_predictions, loss, acc, mse_loss
 
 
 def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
