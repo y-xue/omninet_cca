@@ -125,9 +125,9 @@ class Generator(nn.Module):
         return self.main(input)
 
 class FrameGenerator(nn.Module):
-    def __init__(self):
+    def __init__(self, ngf=32, nc=3, nz=512):
         super(FrameGenerator, self).__init__()
-        self.img_gen = Generator()
+        self.img_gen = Generator(ngf, nc, nz)
 
     def forward(self, inputs):
         return [self.img_gen(x) for x in inputs]
