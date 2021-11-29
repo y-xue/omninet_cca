@@ -136,6 +136,8 @@ parser.add_argument('--sa_res_dp', default=0, type=float, help='dropout at the r
 parser.add_argument('--test', action='store_true', help='true if test the model')
 parser.add_argument('--frame_loss_w', default=1.0, type=float, help='scale frame loss')
 parser.add_argument('--save_frame', default=None, type=int, help='index of sample of the first validation mini-batch')
+parser.add_argument('--decoder_dim', default=512, type=int, help='cnp decoder_dim.')
+parser.add_argument('--output_dim', default=512, type=int, help='cnp output_dim.')
 
 args = parser.parse_args()
 
@@ -190,6 +192,8 @@ def set_config(config, conf_type='default'):
     config[0]['decoder_n_layers'] = args.dec_n_layers
     config[0]['decoder_n_heads'] = args.dec_n_heads
     config[0]['save_decoder_attn'] = args.save_decoder_attn
+    config[0]['decoder_dim'] = args.decoder_dim
+    config[0]['output_dim'] = args.output_dim
     if args.patch_size is not None:
         config[0]['patch_sizes'] = (args.patch_size, args.patch_size)
     config[0]['patch_stride'] = args.patch_stride
@@ -683,7 +687,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w, save_frame_id=save_frame_id)
+                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, frame_loss_w=args.frame_loss_w)
                     if save_frame_id is not None:
                         write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
                         write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
