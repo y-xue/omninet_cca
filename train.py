@@ -137,6 +137,7 @@ parser.add_argument('--test', action='store_true', help='true if test the model'
 parser.add_argument('--frame_loss_w', default=1.0, type=float, help='scale frame loss')
 parser.add_argument('--save_frame', default=None, type=int, help='index of sample of the first validation mini-batch')
 parser.add_argument('--decoder_dim', default=512, type=int, help='cnp decoder_dim.')
+parser.add_argument('--decoder_d_v_d_k', default=64, type=int, help='cnp decoder_d_v decoder_d_k.')
 parser.add_argument('--output_dim', default=512, type=int, help='cnp output_dim.')
 
 args = parser.parse_args()
@@ -193,6 +194,7 @@ def set_config(config, conf_type='default'):
     config[0]['decoder_n_heads'] = args.dec_n_heads
     config[0]['save_decoder_attn'] = args.save_decoder_attn
     config[0]['decoder_dim'] = args.decoder_dim
+    config[0]['decoder_d_v'] = config[0]['decoder_d_k'] = args.decoder_d_v_d_k
     config[0]['output_dim'] = args.output_dim
     if args.patch_size is not None:
         config[0]['patch_sizes'] = (args.patch_size, args.patch_size)
