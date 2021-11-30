@@ -92,7 +92,7 @@ class CNP(nn.Module):
 
         self.output_clfs = nn.ModuleList([nn.Linear(self.output_dim, t) for t in self.task_clflen])
         if 'mosi' in tasks:
-            self.output_gen = FrameGenerator(ngf=output_dim//16, nz=output_dim)
+            self.output_gen = FrameGenerator(ngf=self.output_dim//16, nz=self.output_dim)
         #Use one extra to define padding
         self.output_embs = nn.ModuleList([nn.Embedding(t+1,self.output_embedding_dim,padding_idx=t) for t in self.task_clflen])
 
@@ -296,9 +296,6 @@ class CNP(nn.Module):
             self.pad_cache=pad_mask
         else:
             self.pad_cache=torch.cat([self.pad_cache,pad_mask],1)
-    
-    def generator(self):
-        return self.output_gen(self.spatial_cache)
 
     def encode_structured(self,cat_encodings,one_encoding,domain='EMPTY'):
         if one_encoding is not None:

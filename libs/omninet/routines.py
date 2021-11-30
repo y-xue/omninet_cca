@@ -48,7 +48,7 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
         loss,acc=None, None
 
     if image_targets is not None:
-        loss_fn = nn.MSELoss()
+        loss_fn = nn.L1loss() #nn.MSELoss()
         mse_loss = frame_loss_w * sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
     else:
         mse_loss = None

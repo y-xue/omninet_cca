@@ -116,8 +116,8 @@ class Generator(nn.Module):
             nn.ReLU(True),
         
             # output nc * 64 * 64
-            # nn.ConvTranspose2d(ngf, nc, 5, 3, 0, bias=False), # -> 224
-            nn.ConvTranspose2d(ngf, nc, 4, 2, 0, bias=False), # -> 150
+            nn.ConvTranspose2d(ngf, nc, 5, 3, 0, bias=False), # -> 224
+            # nn.ConvTranspose2d(ngf, nc, 4, 2, 0, bias=False), # -> 150
             nn.Sigmoid()
         )
         

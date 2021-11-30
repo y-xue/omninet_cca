@@ -99,9 +99,6 @@ class OmniNet(nn.Module):
     def decode_greedy(self,task, num_steps):
         return self.cnp.decode(task, targets=None, num_steps=num_steps)
 
-    def generator(self):
-        return self.cnp.generator()
-
     def save(self, checkpoint_dir, iterations):
         save_dir = os.path.join(checkpoint_dir, str(iterations))
         try:
