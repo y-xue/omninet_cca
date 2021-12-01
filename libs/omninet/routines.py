@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False, frame_loss_w=1.0):
+def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
@@ -49,7 +49,7 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
 
     if image_targets is not None:
         loss_fn = nn.L1loss() #nn.MSELoss()
-        mse_loss = frame_loss_w * sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
+        mse_loss =  sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
     else:
         mse_loss = None
 
