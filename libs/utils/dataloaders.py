@@ -1094,8 +1094,11 @@ class mosi_dataset(Dataset):
     def __getitem__(self, index):
         buffer = self.load_frames(self.fnames[index])
 
-        # make the target frames' pixel features (0,1)
-        video_target = buffer[-self.target_len:]/255
+        # # make the target frames' pixel features (0,1)
+        # video_target = buffer[-self.target_len:]/255
+
+        # make the target frames' pixel features (-1,1)
+        video_target = 2 * buffer[-self.target_len:] / 255 - 1
         # video_target = video_target[:,
         #          0:150,
         #          0:150, :]
@@ -1104,7 +1107,8 @@ class mosi_dataset(Dataset):
         if self.split == 'train':
             # Perform data augmentation
             buffer = self.randomflip(buffer)
-        buffer = self.normalize(buffer)
+        # buffer = self.normalize(buffer)
+        buffer = self.normalize1(buffer)
         buffer = self.to_tensor(buffer)
         return {'video': torch.from_numpy(buffer), 'trs': self.trs[index], 
                 'video_target': torch.from_numpy(video_target), 'label': self.labels[index]}
@@ -1126,6 +1130,12 @@ class mosi_dataset(Dataset):
             frame -= np.array([[[0.485, 0.456, 0.406]]])
             frame /= np.array([[[0.229, 0.224, 0.225]]])
             buffer[i] = frame
+
+        return buffer
+
+    def normalize1(self, buffer):
+        for i, frame in enumerate(buffer):
+            buffer[i] = 2 * frame / 255 - 1
 
         return buffer
     

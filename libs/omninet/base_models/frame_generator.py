@@ -98,27 +98,32 @@ class Generator(nn.Module):
             # input Z; First
             nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf*8),
-            nn.ReLU(True),
+            # nn.ReLU(True),
+            nn.LeakyReLU(inplace=True),
 
             # 2nd
             nn.ConvTranspose2d(ngf*8, ngf*4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf*4),
-            nn.ReLU(True),
+            # nn.ReLU(True),
+            nn.LeakyReLU(inplace=True),
         
             # 3rd
             nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 3, 0, bias=False),
             nn.BatchNorm2d(ngf*2),
-            nn.ReLU(True),
+            # nn.ReLU(True),
+            nn.LeakyReLU(inplace=True),
         
             # 4th
             nn.ConvTranspose2d(ngf * 2, ngf, 4, 3, 1, bias=False),
             nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
+            # nn.ReLU(True),
+            nn.LeakyReLU(inplace=True),
         
             # output nc * 64 * 64
             nn.ConvTranspose2d(ngf, nc, 5, 3, 0, bias=False), # -> 224
             # nn.ConvTranspose2d(ngf, nc, 4, 2, 0, bias=False), # -> 150
-            nn.Sigmoid()
+            # nn.Sigmoid()
+            nn.Tanh()
         )
         
     def forward(self, input):
