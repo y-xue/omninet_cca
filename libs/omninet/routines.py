@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
+def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False, gpu_id=-1):
     # Reset the cnp memory
     batch_size = images.shape[0]
     omninet.reset(batch_size)
@@ -53,7 +53,7 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
     else:
         mse_loss = None
 
-    tv_loss = sum([calc_total_variation_loss(pred) for pred in frame_predictions])
+    tv_loss = sum([calc_total_variation_loss(pred, gpu_id) for pred in frame_predictions])
 
     if return_str_preds:
         # Return predictions in detokenized string format
@@ -284,8 +284,14 @@ def calc_nll_loss_and_acc(predictions, targets, pad_id=None, target_pad_mask=Non
         acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]))*100
     return loss, acc
 
-def calc_total_variation_loss(predictions):
+def calc_total_variation_loss(predictions, gpu_id=-1):
     b,c,h,w = predictions.shape
+    if gpu_id == -1:
+        col_paddings = torch.zeros((b,c,h,1))
+        row_paddings = torch.zeros((b,c,1,w))
+    else:
+        col_paddings = torch.zeros((b,c,h,1),device=gpu_id)
+        row_paddings = torch.zeros((b,c,1,w),device=gpu_id)
     return torch.mean((
-        torch.cat([(predictions[:,:,:,1:]-predictions[:,:,:,:-1])**2,torch.zeros(b,c,h,1)],dim=3)+
-        torch.cat([(predictions[:,:,1:,:]-predictions[:,:,:-1,:])**2,torch.zeros(b,c,1,w)],dim=2))**0.5)
+        torch.cat([(predictions[:,:,:,1:]-predictions[:,:,:,:-1])**2,col_paddings],dim=3)+
+        torch.cat([(predictions[:,:,1:,:]-predictions[:,:,:-1,:])**2,row_paddings],dim=2))**0.5)
