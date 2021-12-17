@@ -639,7 +639,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True)
+                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True, gpu_id=gpu_id)
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
                     val_tv_loss += float(tv_loss.detach().cpu().numpy())
@@ -693,7 +693,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, gpu_id=gpu_id)
                     if save_frame_id is not None:
                         write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
                         write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
@@ -746,11 +746,11 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 labels = labels.cuda(device=gpu_id)
             trs = batch['trs']
 
-            _, _, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only)
+            _, _, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, gpu_id=gpu_id)
             ws = args.frame_loss_w
             total_loss = ws[0]*loss + ws[1]*mse_loss + ws[2]*tv_loss
             total_loss.backward()
-            
+
             loss=loss.detach()
             mse_loss=mse_loss.detach()
             tv_loss=tv_loss.detach()
