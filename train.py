@@ -623,6 +623,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 start_time = time.time()
                 val_loss = 0
                 val_mse_loss = 0
+                val_tv_loss = 0
                 val_acc=0
                 n_correct = 0
                 n_total = 0
@@ -638,22 +639,24 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True)
+                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='predict',return_str_preds=True)
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
+                    val_tv_loss += float(tv_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
                     n_correct += acc * bs
                     n_total += bs
                 val_loss/=len(val_dl)
                 val_mse_loss/=len(val_dl)
+                val_tv_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
                 val_acc1=n_correct/n_total
                 # summary_writer.add_scalar('Val_loss', val_loss, step)
 
-                log_str += 'Step %d, MOSI test loss: %f, MSELoss: %f, Accuracy %f %%\n' % (step, val_loss, val_mse_loss, val_acc1)
+                log_str += 'Step %d, MOSI test loss: %f, MSELoss: %f, TVLoss: %f, Accuracy %f %%\n' % (step, val_loss, val_mse_loss, val_tv_loss, val_acc1)
                 log_str += '-'*100 + '\n' + 'Test takes: {:.8f}s\n'.format(time.time() - start_time)
-                print('Step %d, MOSI test loss: %f, MSELoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss, val_mse_loss, val_acc, val_acc1))
+                print('Step %d, MOSI test loss: %f, MSELoss: %f, TVLoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss, val_mse_loss, val_tv_loss, val_acc, val_acc1))
                 print('-'*100 )
 
                 print('Test takes: {:.8f}s'.format(time.time() - start_time))
@@ -668,6 +671,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 model = model.eval()
                 val_loss = 0
                 val_mse_loss = 0
+                val_tv_loss = 0
                 val_acc = 0
                 n_correct = 0
                 n_total = 0
@@ -689,26 +693,28 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         labels = labels.cuda(device=gpu_id)
                     trs = b['trs']
 
-                    pred, frame_predictions, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only)
+                    pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only)
                     if save_frame_id is not None:
                         write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
                         write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
 
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
+                    val_tv_loss += float(tv_loss.detach().cpu().numpy())
                     val_acc += acc
                     bs = labels.shape[0]
                     n_correct += acc * bs
                     n_total += bs
                 val_loss/=len(val_dl)
                 val_mse_loss/=len(val_dl)
+                val_tv_loss/=len(val_dl)
                 val_acc=(val_acc/len(val_dl))
                 val_acc1=n_correct/n_total
                 # summary_writer.add_scalar('Val_loss', val_loss, step)
 
-                log_str += 'Step %d, MOSI validation loss: %f, MSELoss: %f, Accuracy %f %%\n' % (step, val_loss,val_mse_loss,val_acc1)
+                log_str += 'Step %d, MOSI validation loss: %f, MSELoss: %f, TVLoss: %f, Accuracy %f %%\n' % (step, val_loss,val_mse_loss,val_tv_loss,val_acc1)
                 log_str += '-'*100 + '\n' + 'Evaluation takes: {:.8f}s\n'.format(time.time() - start_time)
-                print('Step %d, MOSI validation loss: %f, MSELoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_mse_loss,val_acc,val_acc1))
+                print('Step %d, MOSI validation loss: %f, MSELoss: %f, TVLoss: %f, Accuracy %f %%, Accuracy1 %f %%' % (step, val_loss,val_mse_loss,val_tv_loss,val_acc,val_acc1))
                 print('-'*100 )
 
                 print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
@@ -740,16 +746,18 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 labels = labels.cuda(device=gpu_id)
             trs = batch['trs']
 
-            _, _, loss, acc, mse_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only)
+            _, _, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only)
             ws = args.frame_loss_w
-            total_loss = ws[0]*loss + ws[1]*mse_loss
+            total_loss = ws[0]*loss + ws[1]*mse_loss + ws[2]*tv_loss
             total_loss.backward()
+            
             loss=loss.detach()
             mse_loss=mse_loss.detach()
+            tv_loss=tv_loss.detach()
             # if log:
             #     summary_writer.add_scalar('Loss', loss, step)
-            log_str += 'Step %d, MOSI Loss: %f, MSELoss: %f, Accuracy:  %f %%\n' % (step, loss, mse_loss, acc)
-            print('Step %d, MOSI Loss: %f, MSELoss: %f, Accuracy:  %f %%' % (step, loss, mse_loss, acc))
+            log_str += 'Step %d, MOSI Loss: %f, MSELoss: %f, TVLoss: %f, Accuracy:  %f %%\n' % (step, loss, mse_loss, tv_loss, acc)
+            print('Step %d, MOSI Loss: %f, MSELoss: %f, TVLoss: %f, Accuracy:  %f %%' % (step, loss, mse_loss, tv_loss, acc))
 
         elif task == 'vg':
             if i + 1 >= train_steps:

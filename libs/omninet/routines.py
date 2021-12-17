@@ -48,17 +48,19 @@ def mosi(omninet,images,transcripts,targets=None,image_targets=None,mode='train'
         loss,acc=None, None
 
     if image_targets is not None:
-        loss_fn = nn.L1loss() #nn.MSELoss()
-        mse_loss =  sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
+        loss_fn = nn.L1Loss() #nn.MSELoss()
+        mse_loss = sum([loss_fn(pred, truth) for pred,truth in zip(frame_predictions,image_targets)])
     else:
         mse_loss = None
+
+    tv_loss = sum([calc_total_variation_loss(pred) for pred in frame_predictions])
 
     if return_str_preds:
         # Return predictions in detokenized string format
         predictions = predictions.argmax(-1)
     if attns is not None or dec_attns is not None:
-        return predictions, frame_predictions, loss, acc, mse_loss, attns, dec_attns
-    return predictions, frame_predictions, loss, acc, mse_loss
+        return predictions, frame_predictions, loss, acc, mse_loss, tv_loss, attns, dec_attns
+    return predictions, frame_predictions, loss, acc, mse_loss, tv_loss
 
 
 def vg(omninet,images,questions,targets=None,mode='train',return_str_preds=False,num_steps=1, greedy_only=False):
@@ -282,18 +284,8 @@ def calc_nll_loss_and_acc(predictions, targets, pad_id=None, target_pad_mask=Non
         acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]))*100
     return loss, acc
 
-def calc_mse_loss(predictions, targets):
-    #Calculate loss
-    loss_fn = nn.MSELoss()
-    
-    loss = loss_fn(predictions, targets)
-    #Calculate accuracy
-    preds=predictions.argmax(-1)
-    preds=torch.reshape(preds,[-1])
-    if target_pad_mask is not None:
-        target_pad_mask=torch.reshape(target_pad_mask,[-1])
-        preds=preds+(target_pad_mask*1000000).to(dtype=torch.long)
-        acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]-target_pad_mask.sum().cpu().numpy()))*100
-    else:
-        acc=(torch.sum(targets==preds).sum().cpu().numpy()/(targets.shape[0]))*100
-    return loss, acc
+def calc_total_variation_loss(predictions):
+    b,c,h,w = predictions.shape
+    return torch.mean((
+        torch.cat([(predictions[:,:,:,1:]-predictions[:,:,:,:-1])**2,torch.zeros(b,c,h,1)],dim=3)+
+        torch.cat([(predictions[:,:,1:,:]-predictions[:,:,:-1,:])**2,torch.zeros(b,c,1,w)],dim=2))**0.5)
