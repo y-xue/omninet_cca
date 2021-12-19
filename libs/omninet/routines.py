@@ -286,12 +286,17 @@ def calc_nll_loss_and_acc(predictions, targets, pad_id=None, target_pad_mask=Non
 
 def calc_total_variation_loss(predictions, gpu_id=-1):
     b,c,h,w = predictions.shape
-    if gpu_id == -1:
-        col_paddings = torch.zeros((b,c,h,1))
-        row_paddings = torch.zeros((b,c,1,w))
-    else:
-        col_paddings = torch.zeros((b,c,h,1),device=gpu_id)
-        row_paddings = torch.zeros((b,c,1,w),device=gpu_id)
-    return torch.mean((
-        torch.cat([(predictions[:,:,:,1:]-predictions[:,:,:,:-1])**2,col_paddings],dim=3)+
-        torch.cat([(predictions[:,:,1:,:]-predictions[:,:,:-1,:])**2,row_paddings],dim=2))**0.5)
+    pixel_dif1 = predictions[:,:,:,1:] - predictions[:,:,:,:-1]
+    pixel_dif2 = predictions[:,:,1:,:] - predictions[:,:,:-1,:]
+    return torch.mean(torch.abs(pixel_dif1)) + torch.mean(torch.abs(pixel_dif2))
+
+    # if gpu_id == -1:
+    #     col_paddings = torch.zeros((b,c,h,1))
+    #     row_paddings = torch.zeros((b,c,1,w))
+    # else:
+    #     col_paddings = torch.zeros((b,c,h,1),device=gpu_id)
+    #     row_paddings = torch.zeros((b,c,1,w),device=gpu_id)
+    # return torch.mean((
+    #     torch.cat([(predictions[:,:,:,1:]-predictions[:,:,:,:-1])**2,col_paddings],dim=3)+
+    #     torch.cat([(predictions[:,:,1:,:]-predictions[:,:,:-1,:])**2,row_paddings],dim=2))**0.5)
+
