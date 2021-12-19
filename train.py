@@ -135,10 +135,12 @@ parser.add_argument('--sa_res', action='store_true', help='true if add residual 
 parser.add_argument('--sa_res_dp', default=0, type=float, help='dropout at the residual connection on spatial stream')
 parser.add_argument('--test', action='store_true', help='true if test the model')
 parser.add_argument('--frame_loss_w', default=[1.0,1.0], nargs='+', type=float, help='weights of frame losses')
+parser.add_argument('--tv_loss_start', default=0, type=int, help='# of epoch to activate tv_loss')
 parser.add_argument('--save_frame', default=None, type=int, help='index of sample of the first validation mini-batch')
 parser.add_argument('--decoder_dim', default=512, type=int, help='cnp decoder_dim.')
 parser.add_argument('--decoder_d_v_d_k', default=64, type=int, help='cnp decoder_d_v decoder_d_k.')
 parser.add_argument('--output_dim', default=512, type=int, help='cnp output_dim.')
+
 
 args = parser.parse_args()
 
@@ -748,7 +750,14 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
             _, _, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, gpu_id=gpu_id)
             ws = args.frame_loss_w
-            total_loss = ws[0]*loss + ws[1]*mse_loss + ws[2]*tv_loss
+            if args.tv_loss_start <= i // eval_interval:
+                w12_sum = ws[0] + ws[1]
+                ws[0] /= w12_sum
+                ws[1] /= w12_sum
+                total_loss = ws[0]*loss + ws[1]*mse_loss
+            else:
+                total_loss = ws[0]*loss + ws[1]*mse_loss + ws[2]*tv_loss
+                
             total_loss.backward()
 
             loss=loss.detach()
