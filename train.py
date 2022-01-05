@@ -649,6 +649,12 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     bs = labels.shape[0]
                     n_correct += acc * bs
                     n_total += bs
+
+                    if args.save_frame:
+                        for k in range(frame_predictions.shape[0]):
+                            write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][k].detach().cpu().numpy())
+                            write_attn(args.model_save_path+'_target_frames', video_targets[0][k].detach().cpu().numpy())
+
                 val_loss/=len(val_dl)
                 val_mse_loss/=len(val_dl)
                 val_tv_loss/=len(val_dl)
@@ -679,13 +685,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                 n_total = 0
                 log_str += '-'*100 + '\nEvaluation step\n'
                 print('-'*100 + '\nEvaluation step')
-                frame_saved = False
+                # frame_saved = False
                 for b in val_dl:
-                    if not frame_saved and args.save_frame is not None:
-                        save_frame_id = args.save_frame
-                        frame_saved = True
-                    else:
-                        save_frame_id = None
+                    # if not frame_saved and args.save_frame is not None:
+                    #     save_frame_id = args.save_frame
+                    #     frame_saved = True
+                    # else:
+                    #     save_frame_id = None
                     imgs = b['videos']
                     video_targets = b['video_targets']
                     labels = b['labels']
@@ -696,9 +702,9 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     trs = b['trs']
 
                     pred, frame_predictions, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='val',return_str_preds=True, greedy_only=args.greedy_only, gpu_id=gpu_id)
-                    if save_frame_id is not None:
-                        write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
-                        write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
+                    # if save_frame_id is not None:
+                    #     write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][save_frame_id].detach().cpu().numpy())
+                    #     write_attn(args.model_save_path+'_target_frames', video_targets[0][save_frame_id].detach().cpu().numpy())
 
                     val_loss += float(loss.detach().cpu().numpy())
                     val_mse_loss += float(mse_loss.detach().cpu().numpy())
