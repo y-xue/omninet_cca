@@ -756,7 +756,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
             _, _, loss, acc, mse_loss, tv_loss = r.mosi(model, imgs, trs, targets=labels,image_targets=video_targets, mode='train',return_str_preds=True, greedy_only=args.greedy_only, gpu_id=gpu_id)
             ws = args.frame_loss_w
-            if args.tv_loss_start < i // eval_interval:
+            if args.tv_loss_start >= i // eval_interval:
                 w12_sum = ws[0] + ws[1]
                 ws[0] /= w12_sum
                 ws[1] /= w12_sum
