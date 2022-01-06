@@ -651,7 +651,7 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     n_total += bs
 
                     if args.save_frame is not None:
-                        for k in range(frame_predictions.shape[0]):
+                        for k in range(frame_predictions[0].shape[0]):
                             write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][k].detach().cpu().numpy())
                             write_attn(args.model_save_path+'_target_frames', video_targets[0][k].detach().cpu().numpy())
 
