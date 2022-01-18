@@ -541,8 +541,13 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
         with open(args.model_save_path + '/best/acc.pkl', 'rb') as f:
             acc = pickle.load(f)
         best_val_acc = acc['best_val_acc']
+        if 'best_val_combined_score' in acc:
+            best_val_combined_score = acc['best_val_combined_score']
+        else:
+            best_val_combined_score = 0
     else:
         best_val_acc = 0
+        best_val_combined_score = 0
     
     if args.test:
         start = train_steps - 2
@@ -654,6 +659,10 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                         for k in range(frame_predictions[0].shape[0]):
                             write_attn(args.model_save_path+'_predicted_frames', frame_predictions[0][k].detach().cpu().numpy())
                             write_attn(args.model_save_path+'_target_frames', video_targets[0][k].detach().cpu().numpy())
+                            try:
+                                write_attn(args.model_save_path+'_video_names', b['video_names'][k])
+                            except:
+                                pass
 
                 val_loss/=len(val_dl)
                 val_mse_loss/=len(val_dl)
@@ -727,8 +736,11 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
 
                 print('Evaluation takes: {:.8f}s'.format(time.time() - start_time))
 
-                if val_acc1 > best_val_acc:
-                    best_val_acc = val_acc1
+                # if val_acc1 > best_val_acc:
+                    # best_val_acc = val_acc1
+                combined_score = val_acc1/100 + val_mse_loss * -1
+                if combined_score > best_val_combined_score:
+                    best_val_combined_score = combined_score
                     best_iteration = step-1
                     log_str += 'best_iteration:{}\n'.format(best_iteration)
                     print('best_iteration:{}'.format(best_iteration))
@@ -737,7 +749,10 @@ def train(shared_model, task, batch_size, train_steps, gpu_id, start,  restore, 
                     optimizer.save(args.model_save_path, 'best/0')
 
                     with open(args.model_save_path + '/best/acc.pkl', 'wb') as f:
-                        pickle.dump({'best_val_acc': best_val_acc, 'best_iteration': best_iteration}, f)
+                        pickle.dump({
+                            'best_val_combined_score': best_val_combined_score,
+                            'val_acc': val_acc1, 'val_mse_loss': val_mse_loss,
+                            'best_iteration': best_iteration}, f)
 
                 print_log(log_str, args.model_save_path+'.log')
                 log_str = ''

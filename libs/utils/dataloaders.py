@@ -1111,7 +1111,8 @@ class mosi_dataset(Dataset):
         buffer = self.normalize1(buffer)
         buffer = self.to_tensor(buffer)
         return {'video': torch.from_numpy(buffer), 'trs': self.trs[index], 
-                'video_target': torch.from_numpy(video_target), 'label': self.labels[index]}
+                'video_target': torch.from_numpy(video_target), 'label': self.labels[index],
+                'video_name': self.fnames[index]}
         # return torch.from_numpy(buffer), torch.from_numpy(labels).unsqueeze(0)
 
     def randomflip(self, buffer):
@@ -1222,11 +1223,13 @@ def mosi_collate_fn(data):
     collate_trs = []
     collate_video_targets = []
     collate_labels = []
+    collate_video_names = []
     for d in data:
         collate_videos.append(d['video'])
         collate_trs.append(d['trs'])
         collate_video_targets.append(d['video_target'])
         collate_labels.append((d['label']))
+        collate_video_names.append(d['video_name'])
         
     collate_videos = torch.stack(collate_videos, dim=0)
     collate_video_targets = torch.stack(collate_video_targets, dim=0).permute(1,0,4,2,3)
@@ -1235,7 +1238,8 @@ def mosi_collate_fn(data):
         'videos': collate_videos,
         'trs': collate_trs,
         'video_targets': collate_video_targets,
-        'labels': collate_labels
+        'labels': collate_labels,
+        'video_names': collate_video_names
     }
 
 
